@@ -26,6 +26,8 @@ class ApiRequest extends Model
         'body_type',
         'body',
         'body_file_media_id',
+        'scripts',
+        'settings',
         'description',
         'sort_order',
     ];
@@ -35,6 +37,8 @@ class ApiRequest extends Model
         'headers' => 'array',
         'auth' => 'array',
         'body' => 'array',
+        'scripts' => 'array',
+        'settings' => 'array',
     ];
 
     public function collection(): BelongsTo

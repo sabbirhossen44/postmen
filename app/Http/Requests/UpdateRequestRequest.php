@@ -22,9 +22,11 @@ class UpdateRequestRequest extends FormRequest
             'headers' => ['nullable', 'array'],
             'auth_type' => ['nullable', 'string', 'in:none,bearer,basic,api_key'],
             'auth' => ['nullable', 'array'],
-            'body_type' => ['nullable', 'string', 'in:none,form-data,urlencoded,raw,binary'],
+            'body_type' => ['nullable', 'string', 'in:none,form-data,urlencoded,raw,binary,graphql'],
             'body' => ['nullable'],
             'body_file_media_id' => ['nullable', 'integer', 'exists:media,id'],
+            'scripts' => ['nullable', 'array'],
+            'settings' => ['nullable', 'array'],
             'description' => ['nullable', 'string'],
             'sort_order' => ['nullable', 'integer'],
         ];

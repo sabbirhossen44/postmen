@@ -21,10 +21,12 @@ class History extends Model
         'response_headers',
         'response_body',
         'error',
+        'request_snapshot',
     ];
 
     protected $casts = [
         'response_headers' => 'array',
+        'request_snapshot' => 'array',
     ];
 
     public function user(): BelongsTo

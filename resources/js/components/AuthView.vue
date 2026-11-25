@@ -1,18 +1,18 @@
 <template>
-    <div class="flex min-h-screen items-center justify-center bg-[#1c1c1c] px-4">
-        <div class="w-full max-w-md rounded-lg border border-neutral-700 bg-[#262626] p-6 shadow-xl">
+    <div class="flex min-h-screen items-center justify-center pm-canvas px-4">
+        <div class="w-full max-w-md rounded-lg border pm-border pm-panel p-6 shadow-xl">
             <div class="mb-6 text-center">
-                <div class="text-2xl font-bold text-neutral-100">
+                <div class="text-2xl font-bold pm-text">
                     Postmen<span class="text-[#FF6C37]">.</span>
                 </div>
-                <p class="mt-1 text-sm text-neutral-400">Sign in to your workspace</p>
+                <p class="mt-1 text-sm pm-muted">Sign in to your workspace</p>
             </div>
 
-            <div class="mb-4 flex rounded border border-neutral-700">
+            <div class="mb-4 flex rounded border pm-border">
                 <button
                     type="button"
                     @click="mode = 'login'"
-                    :class="mode === 'login' ? 'bg-[#FF6C37] text-white' : 'text-neutral-300 hover:bg-neutral-700'"
+                    :class="mode === 'login' ? 'pm-accent-bg text-white' : 'pm-text-2 hover:pm-active'"
                     class="flex-1 rounded-l px-3 py-2 text-sm font-medium"
                 >
                     Login
@@ -20,7 +20,7 @@
                 <button
                     type="button"
                     @click="mode = 'register'"
-                    :class="mode === 'register' ? 'bg-[#FF6C37] text-white' : 'text-neutral-300 hover:bg-neutral-700'"
+                    :class="mode === 'register' ? 'pm-accent-bg text-white' : 'pm-text-2 hover:pm-active'"
                     class="flex-1 rounded-r px-3 py-2 text-sm font-medium"
                 >
                     Register
@@ -29,43 +29,43 @@
 
             <form @submit.prevent="submit">
                 <div v-if="mode === 'register'" class="mb-3">
-                    <label class="mb-1 block text-xs font-medium text-neutral-400">Name</label>
+                    <label class="mb-1 block text-xs font-medium pm-muted">Name</label>
                     <input
                         v-model="name"
                         type="text"
                         required
                         placeholder="Your name"
-                        class="w-full rounded border border-neutral-700 bg-[#2b2b2b] px-3 py-2 text-sm text-neutral-100 placeholder-neutral-500 outline-none focus:border-[#FF6C37]"
+                        class="w-full rounded border pm-input px-3 py-2 text-sm pm-text placeholder-neutral-500 outline-none focus:border-[#FF6C37]"
                     >
                 </div>
                 <div class="mb-3">
-                    <label class="mb-1 block text-xs font-medium text-neutral-400">Email</label>
+                    <label class="mb-1 block text-xs font-medium pm-muted">Email</label>
                     <input
                         v-model="email"
                         type="email"
                         required
                         placeholder="you@example.com"
-                        class="w-full rounded border border-neutral-700 bg-[#2b2b2b] px-3 py-2 text-sm text-neutral-100 placeholder-neutral-500 outline-none focus:border-[#FF6C37]"
+                        class="w-full rounded border pm-input px-3 py-2 text-sm pm-text placeholder-neutral-500 outline-none focus:border-[#FF6C37]"
                     >
                 </div>
                 <div class="mb-3">
-                    <label class="mb-1 block text-xs font-medium text-neutral-400">Password</label>
+                    <label class="mb-1 block text-xs font-medium pm-muted">Password</label>
                     <input
                         v-model="password"
                         type="password"
                         required
                         placeholder="Password"
-                        class="w-full rounded border border-neutral-700 bg-[#2b2b2b] px-3 py-2 text-sm text-neutral-100 placeholder-neutral-500 outline-none focus:border-[#FF6C37]"
+                        class="w-full rounded border pm-input px-3 py-2 text-sm pm-text placeholder-neutral-500 outline-none focus:border-[#FF6C37]"
                     >
                 </div>
                 <div v-if="mode === 'register'" class="mb-4">
-                    <label class="mb-1 block text-xs font-medium text-neutral-400">Confirm password</label>
+                    <label class="mb-1 block text-xs font-medium pm-muted">Confirm password</label>
                     <input
                         v-model="passwordConfirmation"
                         type="password"
                         required
                         placeholder="Repeat password"
-                        class="w-full rounded border border-neutral-700 bg-[#2b2b2b] px-3 py-2 text-sm text-neutral-100 placeholder-neutral-500 outline-none focus:border-[#FF6C37]"
+                        class="w-full rounded border pm-input px-3 py-2 text-sm pm-text placeholder-neutral-500 outline-none focus:border-[#FF6C37]"
                     >
                 </div>
 
@@ -76,7 +76,7 @@
                 <button
                     type="submit"
                     :disabled="busy"
-                    class="w-full rounded bg-[#FF6C37] px-3 py-2 text-sm font-semibold text-white hover:bg-[#e85a2a] disabled:opacity-50"
+                    class="w-full rounded pm-accent-bg px-3 py-2 text-sm font-semibold text-white hover:bg-[#e85a2a] disabled:opacity-50"
                 >
                     {{ busy ? 'Please wait…' : (mode === 'login' ? 'Login' : 'Create account') }}
                 </button>

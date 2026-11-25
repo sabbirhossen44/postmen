@@ -178,8 +178,18 @@ export const api = {
     },
 
     // History
-    listHistories() {
-        return http.get('/histories').then(listOf)
+    listHistories(page = 1) {
+        return http.get('/histories', { params: { page } }).then((res) => {
+            const d = res.data && res.data.data !== undefined ? res.data.data : res.data
+            // Paginated shape: { data: [...], current_page, last_page, ... }
+            if (d && Array.isArray(d.data)) {
+                return { items: d.data, currentPage: d.current_page || 1, lastPage: d.last_page || 1, total: d.total || d.data.length }
+            }
+            return { items: listOf(res), currentPage: 1, lastPage: 1, total: 0 }
+        })
+    },
+    getHistory(id) {
+        return http.get('/histories/' + id).then(dataOf)
     },
     clearHistories() {
         return http.delete('/histories').then((res) => res.data)

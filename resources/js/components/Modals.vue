@@ -4,13 +4,13 @@
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
         @click.self="$emit('close')"
     >
-        <div class="w-full max-w-lg rounded-lg border border-neutral-700 bg-[#262626] shadow-xl">
-            <div class="flex items-center justify-between border-b border-neutral-700 px-4 py-3">
-                <h3 class="text-sm font-semibold text-neutral-100">{{ title }}</h3>
+        <div class="w-full max-w-lg rounded-lg border pm-border pm-panel shadow-xl">
+            <div class="flex items-center justify-between border-b pm-border px-4 py-3">
+                <h3 class="text-sm font-semibold pm-text">{{ title }}</h3>
                 <button
                     type="button"
                     @click="$emit('close')"
-                    class="rounded px-2 py-0.5 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-100"
+                    class="rounded px-2 py-0.5 pm-muted hover:bg-neutral-700 hover:pm-text"
                 >
                     ✕
                 </button>
@@ -18,11 +18,11 @@
             <div class="max-h-[70vh] overflow-y-auto px-4 py-4">
                 <slot></slot>
             </div>
-            <div class="flex justify-end gap-2 border-t border-neutral-700 px-4 py-3">
+            <div class="flex justify-end gap-2 border-t pm-border px-4 py-3">
                 <button
                     type="button"
                     @click="$emit('close')"
-                    class="rounded border border-neutral-600 px-3 py-1.5 text-sm text-neutral-300 hover:bg-neutral-700"
+                    class="rounded border border-neutral-600 px-3 py-1.5 text-sm pm-text-2 hover:bg-neutral-700"
                 >
                     Cancel
                 </button>
