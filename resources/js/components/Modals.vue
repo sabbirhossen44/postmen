@@ -22,6 +22,7 @@
             </div>
             <div class="flex justify-end gap-2 border-t pm-border px-4 py-3">
                 <button
+                    ref="cancelBtn"
                     type="button"
                     @click="$emit('close')"
                     class="pm-btn pm-btn-ghost"
@@ -38,6 +39,14 @@
                 >
                     {{ confirmLabel }}
                 </button>
+                <button
+                    v-if="extraLabel"
+                    type="button"
+                    @click="$emit('extra')"
+                    class="pm-btn pm-btn-primary"
+                >
+                    {{ extraLabel }}
+                </button>
             </div>
         </div>
     </div>
@@ -53,13 +62,27 @@ export default {
         confirmDisabled: { type: Boolean, default: false },
         // Danger styling for destructive confirms (deletes, clear history).
         danger: { type: Boolean, default: false },
+        // Optional third action (e.g. "Save" on the unsaved-changes dialog).
+        extraLabel: { type: String, default: '' },
     },
-    emits: ['close', 'confirm'],
+    emits: ['close', 'confirm', 'extra'],
     watch: {
         open(value) {
             if (value) {
                 this.$nextTick(() => {
-                    if (this.$refs.confirmBtn && !this.confirmDisabled) this.$refs.confirmBtn.focus()
+                    // Land focus in the first field, so the user can type
+                    // straight away; Enter confirms once the form is valid.
+                    const root = this.$el
+                    const field = root && root.querySelector('input:not([disabled]), select:not([disabled]), textarea:not([disabled])')
+                    if (field) {
+                        field.focus()
+                    } else if (this.danger && this.$refs.cancelBtn) {
+                        // Destructive dialogs without a field: focus Cancel,
+                        // never the destructive button.
+                        this.$refs.cancelBtn.focus()
+                    } else if (this.$refs.confirmBtn && !this.confirmDisabled) {
+                        this.$refs.confirmBtn.focus()
+                    }
                 })
             }
         },
@@ -72,9 +95,21 @@ export default {
     },
     methods: {
         onKeydown(event) {
-            if (this.open && event.key === 'Escape') {
+            if (!this.open) return
+            if (event.key === 'Escape') {
                 event.preventDefault()
                 this.$emit('close')
+                return
+            }
+            // Enter confirms once valid — only from a text input, so Enter
+            // in a textarea still makes a new line, Enter on a select
+            // still opens its dropdown, and Enter on a checkbox just
+            // toggles it.
+            if (event.key === 'Enter' && event.target && event.target.tagName === 'INPUT'
+                && !['checkbox', 'radio', 'button', 'submit', 'file'].includes(event.target.type)
+                && !this.confirmDisabled) {
+                event.preventDefault()
+                this.$emit('confirm')
             }
         },
     },

@@ -1,4 +1,4 @@
-// Toast system — replaces raw alert() calls everywhere.
+// Toast system — replaces raw browser dialogs everywhere.
 // Toasts auto-dismiss, stack newest-first, and are fully reactive.
 import { reactive } from 'vue'
 

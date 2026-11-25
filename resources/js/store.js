@@ -42,7 +42,7 @@ let tabSeq = 1
 const defaultSettings = {
     theme: 'dark',
     layout_density: 'comfortable',
-    default_body_type: 'raw',
+    default_body_type: 'none',
     default_timeout: 30,
     sidebar_width: 320,
 }
@@ -97,10 +97,19 @@ function newTab(request) {
         saving: false,
         saveMessage: '',
         saveMessageIsError: false,
+        // When the tab was last saved (null until the first save).
+        savedAt: null,
         // JSON of the request as last saved / loaded — dirty dot compares
         // the live request against this.
         savedSnapshot: JSON.stringify(req),
     }
+}
+
+// A fresh tab points at a real public echo API, so a new user can press
+// Send straight away (Postman quick-start) instead of a dead placeholder.
+function prefillSampleUrl(tab) {
+    tab.request.url = 'https://postman-echo.com/get'
+    tab.savedSnapshot = JSON.stringify(tab.request)
 }
 
 // Panel sizes are persisted in localStorage (there is no user-settings
@@ -177,6 +186,9 @@ export const store = reactive({
     activeTabId: 1,
 })
 
+// The very first tab opens with the sample URL prefilled.
+prefillSampleUrl(store.tabs[0])
+
 export function setTheme(theme) {
     store.theme = theme === 'light' ? 'light' : 'dark'
     localStorage.setItem('postmen_theme', store.theme)
@@ -252,6 +264,8 @@ export function closeTab(id) {
         tab.request = fresh.request
         tab.response = null
         tab.savedSnapshot = fresh.savedSnapshot
+        tab.savedAt = null
+        prefillSampleUrl(tab)
         return
     }
     const idx = store.tabs.findIndex((t) => t.id === id)
@@ -272,6 +286,7 @@ export function isTabDirty(tab) {
 
 export function markTabSaved(tab) {
     tab.savedSnapshot = JSON.stringify(tab.request)
+    tab.savedAt = new Date()
     tab.saveMessage = 'Saved.'
     tab.saveMessageIsError = false
 }
@@ -307,6 +322,7 @@ export function clearAuth() {
     store.historyLastPage = 1
     store.tabs = [newTab()]
     store.activeTabId = store.tabs[0].id
+    prefillSampleUrl(store.tabs[0])
 }
 
 export async function loadWorkspaces() {

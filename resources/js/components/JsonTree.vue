@@ -1,7 +1,7 @@
 <template>
     <span>
         <template v-if="isObject">
-            <button type="button" @click="collapsed = !collapsed" class="pm-muted hover:pm-text">{{ collapsed ? '▸' : '▾' }}</button>
+            <button type="button" @click="collapsed = !collapsed" class="flex min-h-6 min-w-6 items-center justify-center rounded pm-muted hover:pm-text" :title="collapsed ? 'Expand' : 'Collapse'" :aria-label="collapsed ? 'Expand' : 'Collapse'">{{ collapsed ? '▸' : '▾' }}</button>
             <span v-if="name !== null" class="json-key">"{{ name }}"</span><span v-if="name !== null">: </span>
             <span class="pm-muted">{{ isArray ? 'Array' : 'Object' }} ({{ count }})</span>
             <span v-if="collapsed"> {{ isArray ? '[…]' : '{…}' }}</span>

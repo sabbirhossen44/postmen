@@ -50,24 +50,57 @@
                 </div>
                 <div class="mb-3">
                     <label class="mb-1 block text-xs font-medium pm-muted">Password</label>
-                    <input
-                        v-model="password"
-                        type="password"
-                        required
-                        placeholder="Password"
-                        class="pm-field w-full"
-                    >
+                    <div class="relative">
+                        <input
+                            v-model="password"
+                            :type="showPassword ? 'text' : 'password'"
+                            required
+                            placeholder="Password"
+                            class="pm-field w-full pr-14"
+                        >
+                        <button
+                            type="button"
+                            @click="showPassword = !showPassword"
+                            class="absolute right-2 top-1/2 -translate-y-1/2 text-xs pm-muted hover:pm-text"
+                            :aria-label="showPassword ? 'Hide password' : 'Show password'"
+                        >
+                            {{ showPassword ? 'Hide' : 'Show' }}
+                        </button>
+                    </div>
+                    <ul v-if="mode === 'register'" class="mt-2 list-disc pl-5 text-xs pm-faint">
+                        <li>At least 8 characters</li>
+                        <li>Must match the confirmation below</li>
+                    </ul>
                 </div>
                 <div v-if="mode === 'register'" class="mb-4">
                     <label class="mb-1 block text-xs font-medium pm-muted">Confirm password</label>
-                    <input
-                        v-model="passwordConfirmation"
-                        type="password"
-                        required
-                        placeholder="Repeat password"
-                        class="pm-field w-full"
-                    >
+                    <div class="relative">
+                        <input
+                            v-model="passwordConfirmation"
+                            :type="showPassword ? 'text' : 'password'"
+                            required
+                            placeholder="Repeat password"
+                            class="pm-field w-full pr-14"
+                        >
+                        <button
+                            type="button"
+                            @click="showPassword = !showPassword"
+                            class="absolute right-2 top-1/2 -translate-y-1/2 text-xs pm-muted hover:pm-text"
+                            :aria-label="showPassword ? 'Hide password' : 'Show password'"
+                        >
+                            {{ showPassword ? 'Hide' : 'Show' }}
+                        </button>
+                    </div>
                 </div>
+
+                <div v-if="mode === 'login'" class="mb-3 text-right">
+                    <button type="button" @click="showForgotNote = !showForgotNote" class="text-xs pm-accent-text hover:underline">
+                        Forgot your password?
+                    </button>
+                </div>
+                <p v-if="showForgotNote" class="mb-3 rounded border pm-border px-3 py-2 text-xs pm-muted">
+                    Password reset isn't available in Postmen yet — ask a workspace admin to reset your password.
+                </p>
 
                 <p v-if="error" class="mb-3 rounded border border-red-900 bg-red-950 px-3 py-2 text-sm text-red-300">
                     {{ error }}
@@ -100,11 +133,30 @@ export default {
             email: '',
             password: '',
             passwordConfirmation: '',
+            showPassword: false,
+            showForgotNote: false,
             error: '',
             busy: false,
         }
     },
     methods: {
+        // Plain-language auth errors: a mistyped password and a dead
+        // server should not look the same.
+        friendlyAuthError(e) {
+            const status = e.response && e.response.status
+            if (!e.response) return "Can't reach the server — check your connection and try again."
+            if (status === 401) return 'Wrong email or password. Check them and try again.'
+            if (status === 422) {
+                const message = errMessage(e)
+                if (/credential|password|unauthenticated/i.test(message)) {
+                    return 'Wrong email or password. Check them and try again.'
+                }
+                return message
+            }
+            if (status === 429) return 'Too many tries — wait a moment and try again.'
+            if (status >= 500) return 'Something went wrong on the server — try again in a bit.'
+            return errMessage(e)
+        },
         async submit() {
             this.error = ''
             this.busy = true
@@ -126,7 +178,7 @@ export default {
                 setAuth(result.token, result.user)
                 this.$emit('authenticated')
             } catch (e) {
-                this.error = errMessage(e)
+                this.error = this.friendlyAuthError(e)
             } finally {
                 this.busy = false
             }

@@ -6,16 +6,26 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\LoginRequest;
 use App\Http\Requests\RegisterRequest;
 use App\Repositories\UserRepository;
+use App\Services\OnboardingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 class AuthController extends Controller
 {
     public function register(RegisterRequest $request): JsonResponse
     {
-        $user = UserRepository::create($request->validated());
+        // User + seed in one transaction, so a failed seed can never
+        // leave a registered user with no workspace.
+        $user = DB::transaction(function () use ($request) {
+            $user = UserRepository::create($request->validated());
+            app(OnboardingService::class)->seedFor($user);
+
+            return $user;
+        });
+
         $token = $user->createToken('api')->plainTextToken;
 
         return response()->json([

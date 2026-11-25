@@ -248,6 +248,11 @@
     background-color: transparent;
 }
 .pm-btn-ghost:hover:not(:disabled) { background-color: var(--pm-active); color: var(--pm-text); }
+.pm-btn-secondary {
+    border-color: var(--pm-border);
+    background-color: var(--pm-active);
+}
+.pm-btn-secondary:hover:not(:disabled) { background-color: var(--pm-hover); color: var(--pm-text); }
 .pm-btn-danger {
     border-color: transparent;
     background-color: var(--pm-danger);
@@ -446,7 +451,7 @@ textarea.pm-field:focus-visible {
 .pm-field-xs { font-size: 12px; padding: 5px 8px; }
 .pm-field-flush { border: none; border-radius: 0; box-shadow: none; }
 .pm-field-flush:focus { border: none; box-shadow: none; }
-.pm-icon-btn-xs { width: 20px; height: 20px; }
+.pm-icon-btn-xs { width: 24px; height: 24px; }
 .pm-icon-btn-xs svg { width: 12px; height: 12px; }
 
 /* ---- Segmented-control / square button variants ---- */

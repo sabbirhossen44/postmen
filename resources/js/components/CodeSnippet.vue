@@ -34,6 +34,7 @@
 
 <script>
 import { api, errMessage } from '../api.js'
+import { toastError } from '../utils/toast.js'
 import { CODE_LANGUAGES, requestToCodePayload, generateCodeLocal } from '../utils/codegen.js'
 
 export default {
@@ -83,10 +84,10 @@ export default {
                 if (!api.isMissingEndpoint(e) && errMessage(e) !== 'Empty code response') {
                     // A real backend error: still fall back locally so the
                     // tab is useful, but surface the error.
-                    this.error = 'Code endpoint error: ' + errMessage(e) + ' — showing a local snippet instead.'
+                    this.error = 'Could not reach the code generator — showing a built-in snippet instead.'
                 }
                 this.code = generateCodeLocal(payload, this.language)
-                this.fallbackNote = 'Generated locally — the server code generator did not return code.'
+                this.fallbackNote = 'Showing a built-in snippet for this language.'
             } finally {
                 this.loading = false
             }
@@ -97,7 +98,9 @@ export default {
                 navigator.clipboard.writeText(this.code).then(() => {
                     this.copied = true
                     setTimeout(() => { this.copied = false }, 1500)
-                }).catch(() => {})
+                }).catch(() => toastError('Could not copy the code — select it and copy it manually.'))
+            } else {
+                toastError('Copy is not available in this browser — select the code and copy it manually.')
             }
         },
     },

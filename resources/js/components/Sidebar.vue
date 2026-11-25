@@ -54,46 +54,50 @@
                         <button type="button" @click="store.searchQuery = ''" class="pm-btn pm-btn-ghost pm-btn-sm">Clear search</button>
                     </template>
                 </EmptyState>
+                <!-- Recents: newest sent requests, deduplicated -->
+                <div v-if="recentItems.length > 0 && !(store.searchQuery || '').trim()" class="mb-2">
+                    <p class="px-2 pb-1 text-xs font-medium pm-faint">Recents</p>
+                    <div v-for="item in recentItems" :key="'recent-' + item.id" class="group flex min-h-8 items-center gap-2 rounded px-2 py-2 pm-hover">
+                        <button type="button" @click="loadHistory(item)" class="flex min-w-0 flex-1 items-center gap-2 text-left" :title="item.url">
+                            <span :class="'shrink-0 font-mono text-[11px] font-bold ' + methodClass(item.method)">{{ (item.method || 'GET').toUpperCase() }}</span>
+                            <span class="min-w-0 flex-1 truncate text-sm pm-text-2">{{ item.url }}</span>
+                        </button>
+                    </div>
+                </div>
                 <div v-for="collection in filteredCollections" :key="collection.id" class="mb-1">
                     <div
-                        class="group flex items-center gap-1 rounded px-2 py-1.5 pm-hover"
+                        class="group flex min-h-8 items-center gap-1 rounded px-2 py-2 pm-hover"
                         @contextmenu.prevent="openContextMenu($event, 'collection', collection)"
                     >
-                        <button type="button" @click="toggleCollection(collection)" class="w-4 shrink-0 pm-muted">
+                        <button type="button" @click="toggleCollection(collection)" class="flex h-7 w-7 shrink-0 items-center justify-center rounded pm-muted hover:pm-active" :title="expanded[collection.id] ? 'Collapse collection' : 'Expand collection'" :aria-label="(expanded[collection.id] ? 'Collapse ' : 'Expand ') + collection.name">
                             {{ expanded[collection.id] ? '▾' : '▸' }}
                         </button>
-                        <button type="button" @click="toggleCollection(collection)" class="min-w-0 flex-1 truncate text-left text-sm font-medium pm-text-2">
+                        <button type="button" @click="toggleCollection(collection)" class="min-w-0 flex-1 truncate text-left text-sm font-medium pm-text-2" :title="collection.name">
                             {{ collection.name }}
                         </button>
                         <span class="shrink-0 text-xs pm-faint">{{ collectionRequestCount(collection) }}</span>
-                        <span class="hidden shrink-0 gap-0.5 group-hover:flex">
-                            <button v-if="canEdit" type="button" @click="openPrompt('request', collection)" title="New request" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active">+ Req</button>
-                            <button v-if="canEdit" type="button" @click="openPrompt('folder', collection)" title="New folder" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active">+ Dir</button>
-                            <button type="button" @click="exportCollection(collection)" title="Export collection" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active">↓</button>
-                            <button v-if="canEdit" type="button" @click="openPrompt('rename-collection', collection)" title="Rename" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active">✎</button>
-                            <button v-if="canEdit" type="button" @click="askDelete('collection', collection)" title="Delete" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active hover:text-red-400">✕</button>
-                        </span>
+                        <button type="button" @click.stop="openRowMenu($event, 'collection', collection)" class="flex h-8 w-8 shrink-0 items-center justify-center rounded pm-text-2 hover:pm-active" title="Collection actions" :aria-label="'Actions for collection ' + collection.name">⋯</button>
                     </div>
 
                     <div v-if="expanded[collection.id]">
+                        <div v-if="allRequests(collection).length === 0" class="rounded px-3 py-3 text-center">
+                            <p class="text-xs pm-faint">No requests yet</p>
+                            <button v-if="canEdit" type="button" @click="openPrompt('request', collection)" class="pm-btn pm-btn-primary pm-btn-sm mt-2">New Request</button>
+                        </div>
                         <!-- Folders (sorted by sort_order, indented by nesting depth) -->
-                        <div v-for="folder in sortedFolders(collection)" :key="'f' + folder.id">
+                        <div v-for="folder in visibleFolders(collection)" :key="'f' + folder.id">
                             <div
-                                class="group flex items-center gap-1 rounded px-2 py-1 pm-hover"
+                                class="group flex min-h-8 items-center gap-1 rounded px-2 py-2 pm-hover"
                                 :style="{ paddingLeft: (8 + folderDepth(folder, collection) * 16) + 'px' }"
                                 @contextmenu.prevent="openContextMenu($event, 'folder', folder, collection)"
                             >
-                                <span class="pm-faint">▸</span>
-                                <span class="min-w-0 flex-1 truncate text-sm pm-text-2">{{ folder.name }}</span>
-                                <span class="hidden shrink-0 gap-0.5 group-hover:flex">
-                                    <button v-if="canEdit" type="button" @click="moveFolder(folder, collection, -1)" title="Move up" class="rounded px-1 py-0.5 pm-muted hover:pm-active">↑</button>
-                                    <button v-if="canEdit" type="button" @click="moveFolder(folder, collection, 1)" title="Move down" class="rounded px-1 py-0.5 pm-muted hover:pm-active">↓</button>
-                                    <button v-if="canEdit" type="button" @click="openPrompt('request-folder', { collection, folder })" title="New request in folder" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active">+ Req</button>
-                                    <button v-if="canEdit" type="button" @click="openPrompt('folder-child', { collection, folder })" title="New sub-folder" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active">+ Dir</button>
-                                    <button v-if="canEdit" type="button" @click="openPrompt('rename-folder', folder)" title="Rename" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active">✎</button>
-                                    <button v-if="canEdit" type="button" @click="askDelete('folder', folder)" title="Delete" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active hover:text-red-400">✕</button>
-                                </span>
+                                <button type="button" @click="toggleFolder(folder)" class="flex h-7 w-7 shrink-0 items-center justify-center rounded pm-muted hover:pm-active" :title="isFolderExpanded(folder) ? 'Collapse folder' : 'Expand folder'" :aria-label="(isFolderExpanded(folder) ? 'Collapse ' : 'Expand ') + folder.name">
+                                    {{ isFolderExpanded(folder) ? '▾' : '▸' }}
+                                </button>
+                                <span class="min-w-0 flex-1 truncate text-sm pm-text-2" :title="folder.name">{{ folder.name }}</span>
+                                <button type="button" @click.stop="openRowMenu($event, 'folder', folder, collection)" class="flex h-8 w-8 shrink-0 items-center justify-center rounded pm-text-2 hover:pm-active" title="Folder actions" :aria-label="'Actions for folder ' + folder.name">⋯</button>
                             </div>
+                            <div v-if="isFolderExpanded(folder)">
                             <div
                                 v-for="req in filteredRequests(requestsInFolder(collection, folder.id))"
                                 :key="req.id"
@@ -101,24 +105,23 @@
                                 @dragstart="onDragStart($event, req, collection)"
                                 @dragover.prevent
                                 @drop="onDrop($event, req, collection)"
+                                class="group flex min-h-8 items-center gap-1 rounded px-2 py-2 pm-hover"
+                                :style="{ paddingLeft: (24 + folderDepth(folder, collection) * 16) + 'px' }"
+                                :class="req.id === activeRequestId || req.id === filterHighlightId ? 'pm-active' : ''"
+                                @contextmenu.prevent="openContextMenu($event, 'request', req, collection)"
                             >
                                 <button
                                     type="button"
                                     @click="$emit('load-request', req)"
-                                    @contextmenu.prevent="openContextMenu($event, 'request', req, collection)"
-                                    class="group flex w-full items-center gap-2 rounded px-2 py-1 text-left pm-hover"
-                                    :style="{ paddingLeft: (24 + folderDepth(folder, collection) * 16) + 'px' }"
-                                    :class="req.id === activeRequestId ? 'pm-active' : ''"
+                                    class="flex min-w-0 flex-1 items-center gap-2 text-left"
+                                    :title="req.name || req.url"
                                 >
                                     <span :class="'shrink-0 font-mono text-[11px] font-bold ' + methodClass(req.method)">{{ (req.method || 'GET').toUpperCase() }}</span>
                                     <span class="min-w-0 flex-1 truncate text-sm pm-text-2">{{ req.name || req.url }}</span>
-                                    <span class="hidden shrink-0 gap-0.5 group-hover:flex">
-                                        <span v-if="canEdit" @click.stop="moveRequest(req, collection, -1)" title="Move up" class="rounded px-1 py-0.5 pm-muted hover:pm-active">↑</span>
-                                        <span v-if="canEdit" @click.stop="moveRequest(req, collection, 1)" title="Move down" class="rounded px-1 py-0.5 pm-muted hover:pm-active">↓</span>
-                                        <span v-if="canEdit" @click.stop="duplicateRequest(req)" title="Duplicate" class="rounded px-1 py-0.5 pm-muted hover:pm-active">⧉</span>
-                                        <span v-if="canEdit" @click.stop="askDelete('request', req)" title="Delete" class="rounded px-1 py-0.5 pm-muted hover:pm-active hover:text-red-400">✕</span>
-                                    </span>
                                 </button>
+                                <button v-if="canEdit" type="button" @click.stop="openPrompt('rename-request', req)" class="hidden h-8 w-8 shrink-0 items-center justify-center rounded pm-text-2 hover:pm-active group-hover:flex" title="Rename request" :aria-label="'Rename ' + (req.name || req.url)">✎</button>
+                                <button type="button" @click.stop="openRowMenu($event, 'request', req, collection)" class="flex h-8 w-8 shrink-0 items-center justify-center rounded pm-text-2 hover:pm-active" title="Request actions" :aria-label="'Actions for ' + (req.name || req.url)">⋯</button>
+                            </div>
                             </div>
                         </div>
                         <!-- Top-level requests (no folder) -->
@@ -129,23 +132,21 @@
                             @dragstart="onDragStart($event, req, collection)"
                             @dragover.prevent
                             @drop="onDrop($event, req, collection)"
+                            class="group flex min-h-8 items-center gap-1 rounded px-2 py-2 pm-hover"
+                            :class="req.id === activeRequestId || req.id === filterHighlightId ? 'pm-active' : ''"
+                            @contextmenu.prevent="openContextMenu($event, 'request', req, collection)"
                         >
                             <button
                                 type="button"
                                 @click="$emit('load-request', req)"
-                                @contextmenu.prevent="openContextMenu($event, 'request', req, collection)"
-                                class="group flex w-full items-center gap-2 rounded px-2 py-1 text-left pm-hover"
-                                :class="req.id === activeRequestId ? 'pm-active' : ''"
+                                class="flex min-w-0 flex-1 items-center gap-2 text-left"
+                                :title="req.name || req.url"
                             >
                                 <span :class="'shrink-0 font-mono text-[11px] font-bold ' + methodClass(req.method)">{{ (req.method || 'GET').toUpperCase() }}</span>
                                 <span class="min-w-0 flex-1 truncate text-sm pm-text-2">{{ req.name || req.url }}</span>
-                                <span class="hidden shrink-0 gap-0.5 group-hover:flex">
-                                    <span v-if="canEdit" @click.stop="moveRequest(req, collection, -1)" title="Move up" class="rounded px-1 py-0.5 pm-muted hover:pm-active">↑</span>
-                                    <span v-if="canEdit" @click.stop="moveRequest(req, collection, 1)" title="Move down" class="rounded px-1 py-0.5 pm-muted hover:pm-active">↓</span>
-                                    <span v-if="canEdit" @click.stop="duplicateRequest(req)" title="Duplicate" class="rounded px-1 py-0.5 pm-muted hover:pm-active">⧉</span>
-                                    <span v-if="canEdit" @click.stop="askDelete('request', req)" title="Delete" class="rounded px-1 py-0.5 pm-muted hover:pm-active hover:text-red-400">✕</span>
-                                </span>
                             </button>
+                            <button v-if="canEdit" type="button" @click.stop="openPrompt('rename-request', req)" class="hidden h-8 w-8 shrink-0 items-center justify-center rounded pm-text-2 hover:pm-active group-hover:flex" title="Rename request" :aria-label="'Rename ' + (req.name || req.url)">✎</button>
+                            <button type="button" @click.stop="openRowMenu($event, 'request', req, collection)" class="flex h-8 w-8 shrink-0 items-center justify-center rounded pm-text-2 hover:pm-active" title="Request actions" :aria-label="'Actions for ' + (req.name || req.url)">⋯</button>
                         </div>
                     </div>
                 </div>
@@ -208,9 +209,9 @@
                             {{ (env.variables || []).filter((v) => v.enabled !== false).length }} variables
                         </span>
                     </button>
-                    <span class="hidden shrink-0 gap-0.5 group-hover:flex">
-                        <button type="button" @click="openEnvironmentEditor(env)" title="Edit" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active">✎</button>
-                        <button type="button" @click="askDelete('environment', env)" title="Delete" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active hover:text-red-400">✕</button>
+                    <span class="flex shrink-0 gap-0.5">
+                        <button type="button" @click="openEnvironmentEditor(env)" title="Edit" :aria-label="'Edit environment ' + env.name" class="flex h-7 w-7 items-center justify-center rounded pm-text-2 hover:pm-active">✎</button>
+                        <button type="button" @click="askDelete('environment', env)" title="Delete" :aria-label="'Delete environment ' + env.name" class="flex h-7 w-7 items-center justify-center rounded pm-text-2 hover:pm-active hover:text-red-400">✕</button>
                     </span>
                 </div>
             </div>
@@ -235,10 +236,10 @@
                     description="Every request you send is saved here, with its response, so you can restore it later."
                 >
                     <template #actions>
-                        <button type="button" @click="$emit('clear-request')" class="pm-btn pm-btn-primary pm-btn-sm">Send your first request</button>
+                        <button type="button" @click="$emit('start-first-request')" class="pm-btn pm-btn-primary pm-btn-sm">Send your first request</button>
                     </template>
                 </EmptyState>
-                <div v-for="item in filteredHistories" :key="item.id" class="group mb-1 flex items-center gap-2 rounded px-2 py-1.5 pm-hover">
+                <div v-for="item in filteredHistories" :key="item.id" class="group mb-1 flex min-h-8 items-center gap-2 rounded px-2 py-2 pm-hover">
                     <button type="button" @click="loadHistory(item)" class="min-w-0 flex-1 text-left" title="Restore this request and show its stored response">
                         <span class="flex items-center gap-2">
                             <span :class="'shrink-0 font-mono text-[11px] font-bold ' + methodClass(item.method)">{{ (item.method || 'GET').toUpperCase() }}</span>
@@ -247,7 +248,7 @@
                         </span>
                         <span class="mt-0.5 block truncate text-xs pm-muted">{{ item.url }}</span>
                     </button>
-                    <button type="button" @click="deleteHistoryItem(item)" title="Delete" class="hidden shrink-0 rounded px-1.5 py-0.5 pm-muted hover:pm-active hover:text-red-400 group-hover:block">✕</button>
+                    <button type="button" @click="deleteHistoryItem(item)" title="Delete" aria-label="Delete history entry" class="flex h-7 w-7 shrink-0 items-center justify-center rounded pm-muted hover:pm-active hover:text-red-400">✕</button>
                 </div>
                 <button
                     v-if="store.historyPage < store.historyLastPage"
@@ -268,6 +269,10 @@
             :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
         >
             <button v-if="contextMenu.kind === 'request'" type="button" @click="contextOpenInNewTab" class="block w-full px-3 py-1.5 text-left text-sm pm-text-2 pm-hover">Open in New Tab</button>
+            <button v-if="canEdit && contextMenu.kind === 'collection'" type="button" @click="contextNewRequest" class="block w-full px-3 py-1.5 text-left text-sm pm-text-2 pm-hover">New Request</button>
+            <button v-if="canEdit && contextMenu.kind === 'collection'" type="button" @click="contextNewFolder" class="block w-full px-3 py-1.5 text-left text-sm pm-text-2 pm-hover">New Folder</button>
+            <button v-if="canEdit && contextMenu.kind === 'folder'" type="button" @click="contextNewRequestInFolder" class="block w-full px-3 py-1.5 text-left text-sm pm-text-2 pm-hover">New Request</button>
+            <button v-if="canEdit && contextMenu.kind === 'folder'" type="button" @click="contextNewSubFolder" class="block w-full px-3 py-1.5 text-left text-sm pm-text-2 pm-hover">New Sub-folder</button>
             <button v-if="canEdit && contextMenu.kind === 'request'" type="button" @click="contextDuplicate" class="block w-full px-3 py-1.5 text-left text-sm pm-text-2 pm-hover">Duplicate</button>
             <button v-if="canEdit && contextMenu.kind === 'request'" type="button" @click="contextMove" class="block w-full px-3 py-1.5 text-left text-sm pm-text-2 pm-hover">Move to…</button>
             <button v-if="canEdit && contextMenu.kind === 'collection'" type="button" @click="contextFork" class="block w-full px-3 py-1.5 text-left text-sm pm-text-2 pm-hover">Fork</button>
@@ -293,7 +298,6 @@
                 type="text"
                 placeholder="Name"
                 class="pm-field"
-                @keyup.enter="confirmPrompt"
             >
             <p v-if="prompt.error" class="mt-3 text-sm text-red-400">{{ prompt.error }}</p>
         </Modal>
@@ -301,7 +305,7 @@
         <!-- Confirm delete modal -->
         <Modal
             :open="confirmDelete.open"
-            title="Delete?"
+            :title="confirmDelete.title"
             confirm-label="Delete"
             danger
             @close="confirmDelete.open = false"
@@ -367,8 +371,9 @@
                         @click="row.showSecret = !row.showSecret"
                         class="rounded px-1 py-0.5 pm-muted hover:pm-text"
                         :title="row.showSecret ? 'Hide value' : 'Show value'"
+                        :aria-label="row.showSecret ? 'Hide value' : 'Show value'"
                     >{{ row.showSecret ? '🙈' : '👁' }}</button>
-                    <button type="button" @click="globalsEditor.rows.splice(i, 1)" class="rounded px-1 py-0.5 pm-faint hover:text-red-400" title="Delete row">✕</button>
+                    <button type="button" @click="globalsEditor.rows.splice(i, 1)" class="rounded px-1 py-0.5 pm-faint hover:text-red-400" title="Delete row" aria-label="Delete row">✕</button>
                 </span>
             </div>
             <button type="button" @click="globalsEditor.rows.push({ key: '', initial: '', current: '', type: 'text', showSecret: false, enabled: true })" class="mt-1 rounded px-2 py-1 text-sm pm-muted hover:pm-text-2">+ Add row</button>
@@ -422,7 +427,7 @@ export default {
         activeRequestId: { type: [Number, String], default: null },
         activeTab: { type: String, default: 'collections' },
     },
-    emits: ['load-request', 'load-request-new-tab', 'load-history', 'clear-request'],
+    emits: ['load-request', 'load-request-new-tab', 'load-history', 'clear-request', 'start-first-request'],
     data() {
         return {
             store,
@@ -433,8 +438,10 @@ export default {
             ],
             tab: this.activeTab,
             expanded: {},
+            expandedFolders: {},
+            filterHighlightId: null,
             prompt: { open: false, mode: '', title: '', confirmLabel: 'Create', value: '', target: null, error: '' },
-            confirmDelete: { open: false, kind: '', target: null, message: '' },
+            confirmDelete: { open: false, kind: '', target: null, message: '', title: 'Delete?' },
             envEditor: { open: false, id: null, name: '', variables: [], error: '' },
             globalsEditor: { open: false, rows: [], error: '' },
             contextMenu: { open: false, kind: '', target: null, collection: null, x: 0, y: 0 },
@@ -460,10 +467,26 @@ export default {
             if (!q) return store.histories
             return store.histories.filter((h) => (h.url || '').toLowerCase().includes(q) || (h.method || '').toLowerCase().includes(q))
         },
+        // Recents: the 5 newest history entries, deduplicated by method+URL.
+        recentItems() {
+            const seen = new Set()
+            const out = []
+            for (const h of store.histories) {
+                const key = (h.method || 'GET').toUpperCase() + ' ' + (h.url || '')
+                if (seen.has(key)) continue
+                seen.add(key)
+                out.push(h)
+                if (out.length >= 5) break
+            }
+            return out
+        },
     },
     watch: {
         activeTab(value) {
             this.tab = value
+        },
+        'store.searchQuery'() {
+            this.filterHighlightId = null
         },
     },
     methods: {
@@ -479,6 +502,7 @@ export default {
         expandAll() {
             store.collections.forEach((c) => {
                 this.expanded[c.id] = true
+                ;(c.folders || []).forEach((f) => { this.expandedFolders[f.id] = true })
                 if (!c._treeLoaded) {
                     loadCollectionDetail(c.id).then(() => { c._treeLoaded = true }).catch(() => {})
                 }
@@ -486,6 +510,9 @@ export default {
         },
         collapseAll() {
             this.expanded = {}
+            store.collections.forEach((c) => {
+                ;(c.folders || []).forEach((f) => { this.expandedFolders[f.id] = false })
+            })
         },
         async toggleCollection(collection) {
             const id = collection.id
@@ -524,6 +551,27 @@ export default {
             const folders = (collection.folders || []).slice()
             folders.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || this.folderDepth(a, collection) - this.folderDepth(b, collection) || String(a.name).localeCompare(String(b.name)))
             return folders
+        },
+        // Folders are expanded by default; only a folder whose own toggle
+        // was closed (or whose ancestor was closed) is hidden.
+        isFolderExpanded(folder) {
+            return this.expandedFolders[folder.id] !== false
+        },
+        toggleFolder(folder) {
+            this.expandedFolders[folder.id] = !this.isFolderExpanded(folder)
+        },
+        visibleFolders(collection) {
+            return this.sortedFolders(collection).filter((f) => {
+                let current = f
+                const folders = collection.folders || []
+                while (current && current.parent_id) {
+                    const parent = folders.find((p) => p.id === current.parent_id)
+                    if (!parent) break
+                    if (!this.isFolderExpanded(parent)) return false
+                    current = parent
+                }
+                return true
+            })
         },
         folderDepth(folder, collection) {
             let depth = 0
@@ -606,12 +654,51 @@ export default {
         openContextMenu(event, kind, target, collection) {
             this.contextMenu = { open: true, kind, target, collection: collection || null, x: event.clientX, y: event.clientY }
         },
+        // The always-visible "⋯" button opens the same menu, anchored
+        // under the button instead of at the mouse position.
+        openRowMenu(event, kind, target, collection) {
+            const rect = event.currentTarget.getBoundingClientRect()
+            this.contextMenu = {
+                open: true,
+                kind,
+                target,
+                collection: collection || (kind === 'collection' ? target : null),
+                x: Math.max(0, Math.min(rect.left, window.innerWidth - 200)),
+                y: rect.bottom + 4,
+            }
+        },
         closeContextMenu() {
             this.contextMenu.open = false
         },
         contextOpenInNewTab() {
             this.$emit('load-request-new-tab', this.contextMenu.target)
             this.closeContextMenu()
+        },
+        contextNewRequest() {
+            if (!this.requireEdit()) return
+            const collection = this.contextMenu.target
+            this.closeContextMenu()
+            this.openPrompt('request', collection)
+        },
+        contextNewFolder() {
+            if (!this.requireEdit()) return
+            const collection = this.contextMenu.target
+            this.closeContextMenu()
+            this.openPrompt('folder', collection)
+        },
+        contextNewRequestInFolder() {
+            if (!this.requireEdit()) return
+            const folder = this.contextMenu.target
+            const collection = this.contextMenu.collection
+            this.closeContextMenu()
+            this.openPrompt('request-folder', { collection, folder })
+        },
+        contextNewSubFolder() {
+            if (!this.requireEdit()) return
+            const folder = this.contextMenu.target
+            const collection = this.contextMenu.collection
+            this.closeContextMenu()
+            this.openPrompt('folder-child', { collection, folder })
         },
         async contextDuplicate() {
             if (!this.requireEdit()) return
@@ -810,7 +897,14 @@ export default {
                 environment: 'Delete environment "' + (target && target.name) + '"?',
                 'clear-history': 'Clear all history?',
             }
-            this.confirmDelete = { open: true, kind, target, message: names[kind] || 'Are you sure?' }
+            const titles = {
+                collection: 'Delete "' + (target && target.name) + '"?',
+                folder: 'Delete "' + (target && target.name) + '"?',
+                request: 'Delete "' + (target && target.name) + '"?',
+                environment: 'Delete "' + (target && target.name) + '"?',
+                'clear-history': 'Clear all history?',
+            }
+            this.confirmDelete = { open: true, kind, target, message: names[kind] || 'Are you sure?', title: titles[kind] || 'Delete?' }
         },
         async doDelete() {
             const kind = this.confirmDelete.kind
@@ -959,6 +1053,42 @@ export default {
             } catch (e) {
                 this.globalsEditor.error = errMessage(e)
             }
+        },
+
+        // ---- Filter keyboard navigation (driven by the TopBar filter) ----
+        // Flat list of the requests currently shown, in display order.
+        filteredRequestList() {
+            const out = []
+            const q = (store.searchQuery || '').trim().toLowerCase()
+            this.filteredCollections.forEach((c) => {
+                this.allRequests(c).forEach((r) => {
+                    if (q && !(r.name || '').toLowerCase().includes(q) && !(r.url || '').toLowerCase().includes(q)) return
+                    out.push(r)
+                })
+            })
+            return out
+        },
+        navigateFilter(dir) {
+            const list = this.filteredRequestList()
+            if (list.length === 0) return
+            this.tab = 'collections'
+            let idx = list.findIndex((r) => r.id === this.filterHighlightId)
+            idx = idx === -1 ? (dir > 0 ? 0 : list.length - 1) : (idx + dir + list.length) % list.length
+            const target = list[idx]
+            this.filterHighlightId = target.id
+            // Open the collection / folder so the highlighted row is visible.
+            const collection = this.filteredCollections.find((c) => this.allRequests(c).some((r) => r.id === target.id))
+            if (collection) {
+                this.expanded[collection.id] = true
+                if (target.folder_id) this.expandedFolders[target.folder_id] = true
+            }
+        },
+        activateFilterSelection() {
+            const list = this.filteredRequestList()
+            if (list.length === 0) return
+            const target = list.find((r) => r.id === this.filterHighlightId) || list[0]
+            this.filterHighlightId = null
+            this.$emit('load-request', target)
         },
 
         // ---- History ----

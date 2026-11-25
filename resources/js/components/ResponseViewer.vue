@@ -22,6 +22,7 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="h-6 w-6"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
             </template>
             <template #actions>
+                <button type="button" @click="$emit('try-sample')" class="pm-btn pm-btn-primary pm-btn-sm">Try a sample request</button>
                 <button type="button" @click="$emit('open-palette')" class="pm-btn pm-btn-ghost pm-btn-sm">Find a request (⌘K)</button>
             </template>
         </EmptyState>
@@ -37,8 +38,7 @@
                 <span v-if="response.error" class="text-sm status-error">{{ response.error }}</span>
                 <span class="flex-1"></span>
                 <button type="button" @click="copyBody" class="pm-btn pm-btn-ghost pm-btn-sm">Copy</button>
-                <button type="button" @click="downloadBody" class="pm-btn pm-btn-ghost pm-btn-sm">Download</button>
-                <button type="button" @click="saveResponse" class="pm-btn pm-btn-ghost pm-btn-sm" title="Save response to a file">Save Response</button>
+                <button type="button" @click="downloadBody" class="pm-btn pm-btn-ghost pm-btn-sm">Download ({{ isJson ? '.json' : '.txt' }})</button>
                 <button
                     v-if="request && request.id"
                     type="button"
@@ -262,7 +262,7 @@ export default {
         request: { type: Object, default: null },
         loading: { type: Boolean, default: false },
     },
-    emits: ['examples-changed', 'open-palette'],
+    emits: ['examples-changed', 'open-palette', 'try-sample'],
 
     data() {
         return {
@@ -366,7 +366,9 @@ export default {
             if (navigator.clipboard) {
                 navigator.clipboard.writeText(this.rawBody)
                     .then(() => toastSuccess('Response copied to clipboard.'))
-                    .catch(() => toastError('Could not copy the response.'))
+                    .catch(() => toastError('Could not copy the response — select the text and copy it manually.'))
+            } else {
+                toastError('Copy is not available in this browser — select the text and copy it manually.')
             }
         },
         downloadBody() {
@@ -379,11 +381,6 @@ export default {
             a.click()
             a.remove()
             window.URL.revokeObjectURL(url)
-        },
-        saveResponse() {
-            // "Save Response" downloads the body to a file; "Save as
-            // Example" stores it on the request (see saveAsExample).
-            this.downloadBody()
         },
         exampleBody(ex) {
             const b = ex.body

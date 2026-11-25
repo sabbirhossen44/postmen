@@ -10,6 +10,8 @@
             @open-runner="mainView = 'runner'"
             @open-palette="paletteOpen = true"
             @open-shortcuts="shortcutsOpen = true"
+            @filter-navigate="onFilterNavigate"
+            @filter-activate="onFilterActivate"
         />
         <div v-if="store.error" class="flex shrink-0 items-center gap-2 bg-red-950 px-4 py-2 text-sm text-red-300">
             <span class="flex-1">{{ store.error }}</span>
@@ -35,34 +37,30 @@
                 @load-request-new-tab="loadRequest($event, true)"
                 @load-history="loadHistoryItem"
                 @clear-request="resetActiveTab"
+                @start-first-request="startFirstRequest"
             />
             <div
                 v-show="!store.sidebarCollapsed"
-                class="pm-resizer w-1"
+                class="pm-resizer w-2"
+                role="separator"
+                aria-label="Resize sidebar"
                 @mousedown="startSidebarResize"
                 title="Drag to resize sidebar"
             ></div>
             <main class="flex min-h-0 min-w-0 flex-1 flex-col">
                 <RunnerView v-if="mainView === 'runner'" @close="mainView = 'builder'" />
-                <EmptyState
-                    v-else-if="!store.loading && store.workspaces.length === 0"
-                    title="No workspace yet"
-                    description="Workspaces hold your collections, environments and history. Create one to start sending requests."
-                    icon-color-class="pm-accent-text"
-                >
-                    <template #icon>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="h-6 w-6"><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></svg>
-                    </template>
-                    <template #actions>
-                        <button type="button" @click="openWorkspaceModal" class="pm-btn pm-btn-primary">Create workspace</button>
-                    </template>
-                </EmptyState>
-                <template v-else>
+                <!-- No workspace yet: the builder still works — only saving
+                     needs a workspace, so this is a banner, not a wall. -->
+                <div v-if="!store.loading && store.workspaces.length === 0" class="flex shrink-0 items-center gap-2 border-b border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
+                    <span class="flex-1 text-amber-200">No workspace yet — you can send requests right away, but saving needs a workspace.</span>
+                    <button type="button" @click="openWorkspaceModal" class="pm-btn pm-btn-sm">Create workspace</button>
+                </div>
+                <template>
                 <RequestTabs
                     :tabs="store.tabs"
                     :active-tab-id="store.activeTabId"
                     @select="store.activeTabId = $event"
-                    @close="closeTab($event)"
+                    @close="requestCloseTab($event)"
                     @new="openTab()"
                 />
                 <div class="min-h-0 overflow-y-auto" :style="{ height: builderHeightPct + '%' }">
@@ -72,6 +70,7 @@
                         <button type="button" @click="activeTab().saveConflict = null" class="pm-btn pm-btn-ghost pm-btn-sm">Keep editing mine</button>
                     </div>
                     <RequestBuilder
+                        ref="requestBuilder"
                         :request="activeTab().request"
                         :sending="activeTab().sending"
                         :saving="activeTab().saving"
@@ -82,8 +81,8 @@
                         @save="handleSave(activeTab())"
                     />
                 </div>
-                <div class="pm-resizer pm-resizer-v h-1 w-full" @mousedown="startSplitResize" title="Drag to resize"></div>
-                <ResponseViewer :response="activeTab().response" :sending="activeTab().sending" :request="activeTab().request" :loading="store.loading" @examples-changed="onExamplesChanged" @open-palette="paletteOpen = true" />
+                <div class="pm-resizer pm-resizer-v h-2 w-full" role="separator" aria-label="Resize panels" @mousedown="startSplitResize" title="Drag to resize"></div>
+                <ResponseViewer :response="activeTab().response" :sending="activeTab().sending" :request="activeTab().request" :loading="store.loading" @examples-changed="onExamplesChanged" @open-palette="paletteOpen = true" @try-sample="startFirstRequest" />
 
                 </template>
             </main>
@@ -109,9 +108,9 @@
                 ⌘K
             </button>
             <span class="flex-1"></span>
+            <span :class="saveStatusClass">{{ saveStatusText }}</span>
             <span>{{ store.tabs.length }} tab{{ store.tabs.length === 1 ? '' : 's' }}</span>
             <span>{{ activeEnvironmentName }}</span>
-            <span>Theme: {{ store.theme }}</span>
         </footer>
         <CommandPalette
             :open="paletteOpen"
@@ -127,6 +126,45 @@
         />
         <ShortcutsModal :open="shortcutsOpen" @close="shortcutsOpen = false" />
         <Toasts />
+
+        <!-- Save dialog: pick the destination before saving, instead of
+             silently saving into the first collection. -->
+        <Modal
+            :open="saveDialog.open"
+            title="Save request"
+            confirm-label="Save"
+            :confirm-disabled="saveDialog.busy || !saveDialog.name.trim() || (saveDialog.useNewCollection && !saveDialog.newCollectionName.trim()) || (!saveDialog.useNewCollection && !saveDialog.collectionId)"
+            @close="closeSaveDialog"
+            @confirm="confirmSaveDialog"
+        >
+            <label class="mb-1 block text-xs font-medium pm-muted">Name</label>
+            <input v-model="saveDialog.name" type="text" placeholder="Request name" class="pm-field mb-3">
+            <label class="mb-1 block text-xs font-medium pm-muted">Collection</label>
+            <select v-model="saveDialog.collectionId" :disabled="saveDialog.useNewCollection" class="pm-field mb-2 w-full">
+                <option v-for="c in store.collections" :key="c.id" :value="c.id">{{ c.name }}</option>
+            </select>
+            <label class="flex cursor-pointer items-center gap-2 text-sm pm-text-2">
+                <input v-model="saveDialog.useNewCollection" type="checkbox"> New collection
+            </label>
+            <input v-if="saveDialog.useNewCollection" v-model="saveDialog.newCollectionName" type="text" placeholder="New collection name" class="pm-field mt-2">
+            <p class="mt-3 text-xs pm-faint">Saving to: {{ saveDestinationText }}</p>
+            <p v-if="saveDialog.error" class="mt-3 text-sm text-red-400">{{ saveDialog.error }}</p>
+        </Modal>
+
+        <!-- Unsaved-changes dialog: closing a dirty tab or loading another
+             request over it asks first — never silently discards. -->
+        <Modal
+            :open="discardDialogOpen"
+            title="Unsaved changes"
+            confirm-label="Discard"
+            danger
+            extra-label="Save"
+            @close="discardDialogOpen = false; pendingDiscard = null"
+            @confirm="confirmDiscard"
+            @extra="saveAndContinue"
+        >
+            <p class="text-sm pm-text-2">This tab has unsaved changes. Save them before continuing, or discard them.</p>
+        </Modal>
     </div>
 </template>
 
@@ -149,7 +187,7 @@ import ConsoleDrawer from './ConsoleDrawer.vue'
 import CommandPalette from './CommandPalette.vue'
 import ShortcutsModal from './ShortcutsModal.vue'
 import Toasts from './Toasts.vue'
-import EmptyState from './EmptyState.vue'
+import Modal from './Modals.vue'
 
 // Normalise a saved request (either shape) into builder state.
 function normalizeRequest(saved) {
@@ -242,7 +280,7 @@ function cleanRows(rows) {
 
 export default {
     name: 'App',
-    components: { AuthView, TopBar, Sidebar, RequestTabs, RequestBuilder, ResponseViewer, RunnerView, ConsoleDrawer, CommandPalette, ShortcutsModal, Toasts, EmptyState },
+    components: { AuthView, TopBar, Sidebar, RequestTabs, RequestBuilder, ResponseViewer, RunnerView, ConsoleDrawer, CommandPalette, ShortcutsModal, Toasts, Modal },
     data() {
         return {
             store,
@@ -251,12 +289,44 @@ export default {
             mainView: 'builder',
             paletteOpen: false,
             shortcutsOpen: false,
+            saveDialog: { open: false, name: '', collectionId: null, newCollectionName: '', useNewCollection: false, error: '', busy: false },
+            discardDialogOpen: false,
+            pendingDiscard: null,
+            saveAfterDialog: false,
         }
     },
     computed: {
         activeEnvironmentName() {
             const env = store.environments.find((e) => e.id === store.activeEnvironmentId)
             return env ? 'Env: ' + env.name : 'No Environment'
+        },
+        // Persistent save status in the footer — not just a toast that
+        // disappears after a few seconds.
+        saveStatusText() {
+            const tab = activeTab()
+            if (!tab) return ''
+            if (isTabDirty(tab)) return '● Unsaved changes'
+            if (tab.savedAt) return 'Saved · ' + tab.savedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            return tab.request.id ? 'Saved' : 'Not saved yet'
+        },
+        saveStatusClass() {
+            const tab = activeTab()
+            return tab && isTabDirty(tab) ? 'text-amber-400' : ''
+        },
+        saveDestinationText() {
+            if (this.saveDialog.useNewCollection) {
+                return this.saveDialog.newCollectionName.trim()
+                    ? 'New collection "' + this.saveDialog.newCollectionName.trim() + '"'
+                    : 'a new collection'
+            }
+            const collection = store.collections.find((c) => c.id === this.saveDialog.collectionId)
+            return collection ? '"' + collection.name + '"' : '—'
+        },
+    },
+    watch: {
+        // A newly opened tab lands focus in the URL field.
+        'store.tabs.length'(next, prev) {
+            if (next > prev) this.$nextTick(() => this.focusUrlInput())
         },
     },
     mounted() {
@@ -279,6 +349,7 @@ export default {
         closeTab,
         isTabDirty,
         onUnauthorized() {
+            if (this.confirmIfDirty(activeTab(), { type: 'reset-tab' })) return
             this.resetActiveTab()
         },
         onExamplesChanged(examples) {
@@ -318,7 +389,69 @@ export default {
             tab.request = fresh
             tab.response = null
             tab.savedSnapshot = JSON.stringify(fresh)
+            tab.savedAt = null
             tab.saveMessage = ''
+        },
+        focusUrlInput() {
+            if (this.$refs.requestBuilder && this.$refs.requestBuilder.focusUrl) {
+                this.$refs.requestBuilder.focusUrl()
+            }
+        },
+        // "Send your first request": a fresh tab prefilled with the sample
+        // URL, with the cursor already in the URL field.
+        startFirstRequest() {
+            const tab = activeTab()
+            const fresh = blankRequest()
+            fresh.url = 'https://postman-echo.com/get'
+            tab.request = fresh
+            tab.response = null
+            tab.savedSnapshot = JSON.stringify(fresh)
+            tab.savedAt = null
+            tab.saveMessage = ''
+            this.$nextTick(() => this.focusUrlInput())
+        },
+        onFilterNavigate(dir) {
+            if (this.$refs.sidebar) this.$refs.sidebar.navigateFilter(dir)
+        },
+        onFilterActivate() {
+            if (this.$refs.sidebar) this.$refs.sidebar.activateFilterSelection()
+        },
+        // ---- Unsaved-changes guard (tab close / request load / 401) ----
+        // Returns true when the action must wait for the dialog.
+        confirmIfDirty(tab, action) {
+            if (tab && isTabDirty(tab)) {
+                this.pendingDiscard = action
+                this.discardDialogOpen = true
+                return true
+            }
+            return false
+        },
+        confirmDiscard() {
+            const action = this.pendingDiscard
+            this.pendingDiscard = null
+            this.discardDialogOpen = false
+            if (!action) return
+            if (action.type === 'close-tab') closeTab(action.tabId)
+            else if (action.type === 'load-request') this.doLoadRequest(action.saved, action.newTab)
+            else if (action.type === 'load-history') this.doLoadHistoryItem(action.item)
+            else if (action.type === 'reset-tab') this.resetActiveTab()
+        },
+        async saveAndContinue() {
+            const tab = activeTab()
+            this.discardDialogOpen = false
+            if (!tab.request.id || !tab.request.collection_id) {
+                // Saving needs the dialog first; continue afterwards.
+                this.saveAfterDialog = true
+                this.openSaveDialog(tab)
+                return
+            }
+            await this.handleSave(tab)
+            this.confirmDiscard()
+        },
+        requestCloseTab(id) {
+            const tab = store.tabs.find((t) => t.id === id)
+            if (this.confirmIfDirty(tab, { type: 'close-tab', tabId: id })) return
+            closeTab(id)
         },
         openWorkspaceModal() {
             if (this.$refs.topbar && this.$refs.topbar.openWorkspaceModal) this.$refs.topbar.openWorkspaceModal()
@@ -400,6 +533,10 @@ export default {
             }
         },
         async loadRequest(saved, newTab) {
+            if (!newTab && this.confirmIfDirty(activeTab(), { type: 'load-request', saved, newTab: false })) return
+            return this.doLoadRequest(saved, newTab)
+        },
+        async doLoadRequest(saved, newTab) {
             try {
                 const full = saved.id ? await api.getRequest(saved.id) : saved
                 const req = normalizeRequest(full)
@@ -410,6 +547,7 @@ export default {
                     tab.saveMessage = ''
                 }
                 tab.savedSnapshot = JSON.stringify(req)
+                tab.savedAt = null
             } catch (e) {
                 // Fall back to the tree copy if the detail fetch fails.
                 const req = normalizeRequest(saved)
@@ -419,11 +557,16 @@ export default {
                     tab.response = null
                 }
                 tab.savedSnapshot = JSON.stringify(req)
+                tab.savedAt = null
                 toastError('Could not load the full request: ' + errMessage(e))
             }
         },
         // Full restore from a history entry: request snapshot + stored response.
         loadHistoryItem(item) {
+            if (this.confirmIfDirty(activeTab(), { type: 'load-history', item })) return
+            this.doLoadHistoryItem(item)
+        },
+        doLoadHistoryItem(item) {
             const tab = activeTab()
             const snapshot = item.request_snapshot || null
             if (snapshot) {
@@ -431,12 +574,14 @@ export default {
                 req.id = item.request_id || null
                 tab.request = req
                 tab.savedSnapshot = JSON.stringify(req)
+                tab.savedAt = null
             } else {
                 const req = blankRequest()
                 req.method = (item.method || 'GET').toUpperCase()
                 req.url = item.url || ''
                 tab.request = req
                 tab.savedSnapshot = JSON.stringify(req)
+                tab.savedAt = null
             }
             // Show the stored response instead of sending again.
             const headers = item.response_headers || {}
@@ -505,7 +650,12 @@ export default {
             }
         },
         async handleSend(tab) {
-            if (!tab.request.url.trim() || tab.sending) return
+            if (!tab.request.url.trim()) {
+                toastInfo('Enter a URL first.')
+                this.focusUrlInput()
+                return
+            }
+            if (tab.sending) return
             tab.sending = true
             tab.response = null
             try {
@@ -565,21 +715,81 @@ export default {
                 tab.sending = false
             }
         },
+        // Save: a saved request saves in place; a new one asks where it
+        // goes first (name + collection picker + inline New Collection).
         async handleSave(tab) {
+            if (tab.saving) return
+            if (!tab.request.id || !tab.request.collection_id) {
+                this.openSaveDialog(tab)
+                return
+            }
+            return this.performSave(tab, tab.request.collection_id)
+        },
+        openSaveDialog(tab) {
+            this.saveDialog = {
+                open: true,
+                name: tab.request.name || 'Untitled Request',
+                collectionId: tab.request.collection_id || (store.collections.length > 0 ? store.collections[0].id : null),
+                newCollectionName: '',
+                useNewCollection: store.collections.length === 0,
+                error: '',
+                busy: false,
+            }
+        },
+        closeSaveDialog() {
+            this.saveDialog.open = false
+            // Cancelling the save abandons the action that was waiting on it.
+            this.saveAfterDialog = false
+            this.pendingDiscard = null
+        },
+        async confirmSaveDialog() {
+            const tab = activeTab()
+            const dialog = this.saveDialog
+            if (dialog.busy) return
+            let collectionId = dialog.collectionId
+            dialog.error = ''
+            dialog.busy = true
+            try {
+                if (dialog.useNewCollection) {
+                    const name = dialog.newCollectionName.trim()
+                    if (!name) {
+                        dialog.error = 'Enter a name for the new collection.'
+                        return
+                    }
+                    if (!store.activeWorkspaceId) {
+                        dialog.error = 'Create a workspace first — saving needs somewhere to put the request.'
+                        return
+                    }
+                    const created = await api.createCollection({ workspace_id: store.activeWorkspaceId, name })
+                    await loadCollections()
+                    collectionId = created && created.id
+                }
+                if (!collectionId) {
+                    dialog.error = 'Choose a collection to save into.'
+                    return
+                }
+                tab.request.name = dialog.name.trim() || 'Untitled Request'
+                tab.request.collection_id = collectionId
+                dialog.open = false
+                await this.performSave(tab, collectionId)
+                if (this.saveAfterDialog) {
+                    this.saveAfterDialog = false
+                    this.confirmDiscard()
+                }
+            } catch (e) {
+                dialog.error = errMessage(e)
+            } finally {
+                dialog.busy = false
+            }
+        },
+        async performSave(tab, collectionId) {
             if (tab.saving) return
             tab.saveMessage = ''
             tab.saveMessageIsError = false
-            let collectionId = tab.request.collection_id
             if (!collectionId) {
-                if (store.collections.length > 0) {
-                    collectionId = store.collections[0].id
-                    tab.request.collection_id = collectionId
-                } else {
-                    tab.saveMessage = 'Create a collection first, then save.'
-                    tab.saveMessageIsError = true
-                    toastInfo('Create a collection first, then save this request.')
-                    return
-                }
+                tab.saveMessage = 'Choose a collection to save into.'
+                tab.saveMessageIsError = true
+                return
             }
             tab.saving = true
             try {

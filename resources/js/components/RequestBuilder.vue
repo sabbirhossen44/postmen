@@ -1,16 +1,19 @@
 <template>
     <div class="pm-panel border-b pm-border p-4">
+        <div class="sticky top-0 z-30 -mx-4 -mt-4 border-b pm-border pm-panel px-4 pb-3 pt-4">
         <div class="mb-3 flex items-center gap-2">
             <input
                 v-model="request.name"
                 type="text"
                 placeholder="Untitled Request"
                 class="pm-field w-56 font-medium"
+                :title="request.name || 'Untitled Request'"
             >
             <select
                 v-model="request.collection_id"
                 class="pm-field max-w-52"
                 title="Collection to save into"
+                aria-label="Collection to save into"
             >
                 <option :value="null">No collection</option>
                 <option v-for="c in store.collections" :key="c.id" :value="c.id">{{ c.name }}</option>
@@ -29,9 +32,10 @@
                 <option v-for="m in methods" :key="m" :value="m">{{ m }}</option>
             </select>
             <input
+                ref="urlInput"
                 v-model="request.url"
                 type="text"
-                placeholder="https://api.example.com/users/{{id}} — use {{variable}} for environment values"
+                placeholder="https://postman-echo.com/get"
                 class="pm-field pm-field-mono min-w-0 flex-1"
                 @keyup.enter="$emit('send')"
                 @input="onUrlInput"
@@ -42,7 +46,7 @@
             <button
                 type="button"
                 @click="$emit('send')"
-                :disabled="sending || !request.url.trim()"
+                :disabled="sending"
                 class="pm-btn pm-btn-primary pm-btn-lg"
                 title="Send request (Ctrl/Cmd+Enter)"
             >
@@ -53,7 +57,7 @@
                 type="button"
                 @click="$emit('save')"
                 :disabled="saving || !canEdit"
-                class="pm-btn pm-btn-ghost pm-btn-lg"
+                class="pm-btn pm-btn-secondary pm-btn-lg"
                 :title="canEdit ? 'Save request (Ctrl/Cmd+S)' : 'Viewers cannot edit this workspace'"
             >
                 <span v-if="saving" class="pm-spinner pm-spinner-dark" aria-hidden="true"></span>
@@ -76,6 +80,8 @@
                     <span class="pm-faint"> = {{ v.value }}</span>
                 </button>
             </div>
+        </div>
+        <p v-if="!request.url.trim()" class="mt-2 text-xs text-amber-400">Enter a URL first, then press Send.</p>
         </div>
 
         <!-- {{var}} highlighting: orange = resolved, red = unresolved -->
@@ -130,7 +136,7 @@
                     class="pm-field mb-3"
                 >
                     <option value="none">No Auth</option>
-                    <option value="inherit">Inherit auth from parent</option>
+                    <option value="inherit">Inherit auth from collection</option>
                     <option value="bearer">Bearer Token</option>
                     <option value="basic">Basic Auth</option>
                     <option value="digest">Digest Auth</option>
@@ -138,7 +144,7 @@
                     <option value="oauth2">OAuth 2.0</option>
                     <option value="aws">AWS Signature</option>
                 </select>
-                <p v-if="request.auth_type === 'inherit'" class="mb-3 text-xs pm-faint">Uses the auth of the parent collection / folder when the request is sent. No credentials on this request.</p>
+                <p v-if="request.auth_type === 'inherit'" class="mb-3 text-xs pm-faint">Uses the auth of the collection this request is saved in. No credentials on this request.</p>
                 <p v-if="authNote" class="mb-3 text-xs text-amber-400">{{ authNote }}</p>
                 <div v-if="request.auth_type === 'bearer'">
                     <label class="mb-1 block text-xs font-medium pm-muted">Token</label>
@@ -298,7 +304,7 @@
                 </div>
                 <div v-if="request.body_type === 'form-data'">
                     <KeyValueEditor :rows="request.body.formdata" key-placeholder="Key" value-placeholder="Value" allow-file :variables="previewVariables" />
-                    <p class="mt-2 text-xs pm-faint">File rows are uploaded to /media and sent as real file bytes — never as a stored path string.</p>
+                    <p class="mt-2 text-xs pm-faint">Files are uploaded when you send.</p>
                 </div>
                 <div v-if="request.body_type === 'urlencoded'">
                     <KeyValueEditor :rows="request.body.urlencoded" key-placeholder="Key" value-placeholder="Value" :variables="previewVariables" />
@@ -352,7 +358,7 @@
                         <span class="truncate">{{ binaryName || 'Choose a file…' }}</span>
                         <input type="file" class="hidden" @change="onBinaryFile">
                     </label>
-                    <p class="mt-2 text-xs pm-faint">The file is uploaded to /media and streamed as the request body (Content-Type from the file).</p>
+                    <p class="mt-2 text-xs pm-faint">The file is uploaded when you send.</p>
                 </div>
                 <div v-if="request.body_type === 'graphql'">
                     <label class="mb-1 block text-xs font-medium pm-muted">Query</label>
@@ -461,10 +467,6 @@
                     </label>
                     <label class="flex cursor-pointer items-center gap-2">
                         <input v-model="request.settings.send_cookies" type="checkbox"> Send cookies (use the stored cookie jar)
-                    </label>
-                    <label class="block">
-                        <span class="mb-1 block text-xs font-medium pm-muted">Description</span>
-                        <textarea v-model="request.description" rows="2" placeholder="What does this request do?" class="pm-field w-full"></textarea>
                     </label>
                 </div>
             </div>
@@ -598,7 +600,7 @@ export default {
             if (this.request.auth_type === 'digest') headers.push({ key: 'Authorization', value: 'Digest ••• (auto, negotiated at send)' })
             if (this.request.auth_type === 'oauth2') headers.push({ key: 'Authorization', value: 'Bearer ••• (auto, from the access token)' })
             if (this.request.auth_type === 'aws') headers.push({ key: 'Authorization', value: 'AWS4-HMAC-SHA256 ••• (auto, signed at send)' })
-            if (this.request.auth_type === 'inherit') headers.push({ key: 'Authorization', value: 'from the parent collection / folder (auto)' })
+            if (this.request.auth_type === 'inherit') headers.push({ key: 'Authorization', value: 'from the collection (auto)' })
             if (this.request.auth_type === 'api_key' && this.request.auth.in === 'header') {
                 headers.push({ key: this.request.auth.key || '(api key)', value: '••• (auto)' })
             }
@@ -609,6 +611,12 @@ export default {
     methods: {
         methodClass,
         renderMarkdown,
+        // Focus the URL field (used when a new tab opens or the user is
+        // pointed back at the builder, e.g. after "Send your first request").
+        focusUrl() {
+            const input = this.$refs.urlInput
+            if (input) input.focus()
+        },
         varLabel(key) {
             return '{{' + key + '}}'
         },

@@ -54,17 +54,22 @@
             <input
                 v-model="store.searchQuery"
                 type="text"
-                placeholder="Filter collections, requests, history…"
+                placeholder="Search or press Ctrl+K"
+                aria-label="Filter sidebar"
                 class="pm-field w-full max-w-md"
+                @keydown.down.prevent="$emit('filter-navigate', 1)"
+                @keydown.up.prevent="$emit('filter-navigate', -1)"
+                @keydown.enter.prevent="$emit('filter-activate')"
             >
             <button
                 type="button"
                 @click="$emit('open-palette')"
                 class="pm-btn pm-btn-ghost shrink-0"
-                title="Command palette (Ctrl/Cmd+K)"
+                title="Jump to… (Ctrl/Cmd+K)"
+                aria-label="Jump to…"
             >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-4 w-4"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
-                <span class="hidden xl:inline">Search</span>
+                <span class="hidden xl:inline">Jump to…</span>
                 <span class="pm-kbd">⌘K</span>
             </button>
         </div>
@@ -96,6 +101,7 @@
                 :disabled="!store.activeEnvironmentId"
                 class="rounded border pm-border px-2 py-1.5 text-sm pm-text-2 hover:pm-active disabled:opacity-50"
                 title="Quick-look: view and edit the active environment's variables"
+                aria-label="View environment variables"
             >
                 👁
             </button>
@@ -103,7 +109,7 @@
                 <div class="mb-2 flex items-center gap-2">
                     <span class="text-sm font-medium pm-text">{{ activeEnvironmentName }}</span>
                     <span class="flex-1"></span>
-                    <button type="button" @click="showQuickLook = false" class="rounded px-1.5 py-0.5 pm-muted hover:pm-text" title="Close">✕</button>
+                    <button type="button" @click="showQuickLook = false" class="rounded px-1.5 py-0.5 pm-muted hover:pm-text" title="Close" aria-label="Close quick-look">✕</button>
                 </div>
                 <p v-if="quickLookRows.length === 0" class="text-xs pm-faint">No variables in this environment.</p>
                 <div v-else class="max-h-64 overflow-y-auto">
@@ -129,6 +135,7 @@
                                 @click="row.showSecret = !row.showSecret"
                                 class="rounded px-1 py-0.5 pm-muted hover:pm-text"
                                 :title="row.showSecret ? 'Hide value' : 'Show value'"
+                                :aria-label="row.showSecret ? 'Hide value' : 'Show value'"
                             >{{ row.showSecret ? '🙈' : '👁' }}</button>
                         </span>
                     </div>
@@ -176,6 +183,7 @@
             @click="$emit('open-shortcuts')"
             class="pm-btn pm-btn-ghost"
             title="Keyboard shortcuts (?)"
+            aria-label="Keyboard shortcuts"
         >
             ?
         </button>
@@ -234,10 +242,6 @@
                         type="number" min="200" max="560"
                         class="w-full rounded border pm-input px-2 py-1.5 text-sm outline-none"
                     >
-                </div>
-                <div class="border-t pm-border px-3 py-2 text-xs pm-muted">
-                    Postmen — Postman-compatible API client.<br>
-                    SSRF guard blocks localhost / private IPs (deliberate policy).
                 </div>
             </div>
         </div>
@@ -337,7 +341,7 @@
                     v-model="importCurlText"
                     rows="8"
                     spellcheck="false"
-                    placeholder="curl --request GET --url https://api.example.com/users --header 'Authorization: Bearer abc'"
+                    placeholder="curl --request GET --url https://postman-echo.com/get --header 'Authorization: Bearer abc'"
                     class="pm-field pm-field-mono"
                 ></textarea>
             </div>
@@ -375,7 +379,7 @@ import TeamMembers from './TeamMembers.vue'
 export default {
     name: 'TopBar',
     components: { Modal, TeamMembers },
-    emits: ['logged-out', 'imported', 'manage-environments', 'toggle-console', 'open-runner', 'open-palette', 'open-shortcuts'],
+    emits: ['logged-out', 'imported', 'manage-environments', 'toggle-console', 'open-runner', 'open-palette', 'open-shortcuts', 'filter-navigate', 'filter-activate'],
 
     data() {
         return {
