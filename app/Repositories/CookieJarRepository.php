@@ -24,18 +24,25 @@ class CookieJarRepository extends Repository
         return self::query()->where('id', $id)->where('user_id', $userId)->first();
     }
 
-    /** One row per (user, workspace, domain, name, path). */
+    /** One row per (user, workspace, domain, name, path), matched by key_hash. */
     public static function upsertCookie(array $attributes): StoredCookie
     {
+        $path = $attributes['path'] ?? '/';
+        $keyHash = StoredCookie::keyHash(
+            $attributes['user_id'],
+            $attributes['workspace_id'],
+            $attributes['domain'],
+            $attributes['name'],
+            $path,
+        );
+
         return self::query()->updateOrCreate(
             [
                 'user_id' => $attributes['user_id'],
                 'workspace_id' => $attributes['workspace_id'],
-                'domain' => $attributes['domain'],
-                'name' => $attributes['name'],
-                'path' => $attributes['path'] ?? '/',
+                'key_hash' => $keyHash,
             ],
-            $attributes,
+            array_merge($attributes, ['path' => $path, 'key_hash' => $keyHash]),
         );
     }
 
