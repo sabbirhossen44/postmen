@@ -1,58 +1,127 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Postmen — API Client (Postman clone)
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+A full Postman-style API client built with **Laravel 13 + Vue 3 (plain JS) + Tailwind CSS 4**.
 
-## About Laravel
+Send requests, save them in collections, use environments with `{{variables}}`,
+import/export Postman Collection v2.1 files, and keep a request history — all from
+one app. Requests are sent through the Laravel backend (Guzzle), so browser CORS
+never blocks a call.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Features
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+- **Workspaces** — group collections and environments per workspace.
+- **Collections, folders, requests** — nested folders, coloured method badges
+  (GET / POST / PUT / PATCH / DELETE / HEAD / OPTIONS), duplicate, rename, delete.
+- **Request builder** — Params, Authorization (none / Bearer / Basic / API Key),
+  Headers, Body (none / form-data / x-www-form-urlencoded / raw JSON / binary file).
+- **Environments** — variables with `{{key}}` replacement, one active environment
+  per workspace, collection variables as fallback.
+- **Send** — status, time, size, pretty JSON / raw body, response headers.
+  Private / loopback URLs are refused by the sender (SSRF protection).
+- **History** — every sent request is saved, click one to load it back.
+- **Import / Export** — Postman Collection v2.1 JSON in and out.
+- **Media** — uploads live in the `media` table; anything with an icon or a file
+  (user avatar, workspace icon, collection icon, binary body file) points at it
+  with a `media_id` column.
+- **Auth** — register / login with Laravel Sanctum tokens.
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+## Stack
 
-## Learning Laravel
+| Piece | Version |
+| --- | --- |
+| PHP | ^8.3 (developed on 8.4) |
+| Laravel | ^13.17 (13.44.1 verified) |
+| Laravel Sanctum | ^4.0 |
+| arafatdev/laravel-repository | ^3.1 (static repositories) |
+| Vue | ^3.5, plain JavaScript, Options API — no TypeScript |
+| Tailwind CSS | ^4.0 (Vite plugin) |
+| Vite | ^8.0, `@vitejs/plugin-vue` ^6 |
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+## Setup
 
 ```bash
-composer require laravel/boost --dev
+git clone https://github.com/sabbirhossen44/postmen.git
+cd postmen
 
-php artisan boost:install
+composer install
+cp .env.example .env
+php artisan key:generate
+
+# SQLite is the default (database/database.sqlite). For MySQL, set
+# DB_CONNECTION, DB_HOST, DB_DATABASE, DB_USERNAME, DB_PASSWORD in .env.
+php artisan migrate
+php artisan storage:link
+
+npm install
+npm run dev        # frontend dev server (Vite)
+php artisan serve  # backend on http://127.0.0.1:8000
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+Open http://127.0.0.1:8000, register an account, create a workspace and start
+sending requests. For a production build: `npm run build`.
 
-## Contributing
+## Tests
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+```bash
+php artisan test   # 11 tests, PostmenApiTest covers auth, CRUD, send + SSRF block, import/export, media, history
+```
 
-## Code of Conduct
+## How the code is organised
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+```
+app/Http/Controllers/Api/   thin controllers, {success, message, data} JSON
+app/Http/Requests/          FormRequests (rules + messages)
+app/Models/                 $guarded = ['id'], relations, $casts for JSON fields
+app/Repositories/           static repositories (arafatdev/laravel-repository):
+                            WorkspaceRepository, CollectionRepository, FolderRepository,
+                            ApiRequestRepository, EnvironmentRepository,
+                            HistoryRepository, MediaRepository, UserRepository
+app/Services/               VariableResolver, RequestSender (Guzzle),
+                            CollectionImporter, CollectionExporter, MediaService
+database/migrations/        media first, then users.media_id, workspaces,
+                            collections, folders, requests, environments, histories
+resources/js/               Vue 3 app: api.js (axios), store.js (reactive store),
+                            utils/variables.js, components/ (App, AuthView, TopBar,
+                            Sidebar, RequestBuilder, ResponseViewer, Modals,
+                            KeyValueEditor)
+routes/api.php              public auth routes, then one auth:sanctum group
+routes/web.php              SPA fallback to the Vue app
+```
 
-## Security Vulnerabilities
+Repositories follow the `arafatdev/laravel-repository` pattern exactly: they are
+static (`WorkspaceRepository::find($id)`, `::query()->where(...)->get()`), with
+custom intent-named static helpers (`findForUser`, `activeForWorkspace`, …).
+One fix was needed for Laravel 13: the package base `delete()` calls
+`query()->destroy()`, which no longer exists on Eloquent Builder, so every
+repository overrides `delete($id)` with `query()->whereKey($id)->delete()`.
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+## API quick reference
 
-## License
+All routes live under `/api`. Everything except register/login needs
+`Authorization: Bearer <token>`.
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+| Method | Route | What it does |
+| --- | --- | --- |
+| POST | /auth/register, /auth/login | Sanctum token |
+| POST | /auth/logout | Revoke current token |
+| GET | /auth/user | Current user |
+| CRUD | /workspaces | Workspaces |
+| CRUD | /collections (+ ?workspace_id=) | Collections |
+| GET | /collections/{id}/export | Download v2.1 JSON |
+| POST | /collections/import | Import v2.1 JSON (file or json) |
+| POST | /collections/{id}/folders, /folders/{id} | Folders |
+| POST | /collections/{id}/requests, /requests/{id} | Saved requests |
+| POST | /requests/{id}/duplicate | Duplicate a request |
+| CRUD | /environments (+ ?workspace_id=) | Environments |
+| POST | /environments/{id}/activate | Set active environment |
+| GET/DELETE | /histories | History list / clear / delete one |
+| POST | /media | Upload a file (multipart `file`) |
+| POST | /send | Send a request, returns status/time/size/headers/body |
+
+## Notes
+
+- `POST /send` resolves `{{variables}}` from the given (or active) environment
+  first, then collection variables. History is saved when `save_history` is true.
+- Response bodies are capped at 2 MB in storage; the sender times out after 30s.
+- `public/build` (Vite output) and `vendor/` / `node_modules/` are not committed;
+  run `npm run build` after pulling.

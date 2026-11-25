@@ -7,3 +7,27 @@
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';
 }
+
+/* Slim dark scrollbars used across the app */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: #4b4b4b transparent;
+}
+*::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+    background: #4b4b4b;
+    border-radius: 4px;
+}
+*::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+/* Colours for the pretty-printed JSON response */
+.json-key { color: #9cdcfe; }
+.json-string { color: #ce9178; }
+.json-number { color: #b5cea8; }
+.json-boolean { color: #569cd6; }
+.json-null { color: #569cd6; }
