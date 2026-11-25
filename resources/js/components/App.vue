@@ -133,7 +133,7 @@
 <script>
 import { api, errMessage } from '../api.js'
 import {
-    loadAll, loadCollections, loadCollectionDetail, loadHistories, loadEnvironments,
+    store, loadAll, loadCollections, loadCollectionDetail, loadHistories, loadEnvironments,
     blankRequest, activeTab, openTab, closeTab, isTabDirty, markTabSaved, logConsole,
     storedBuilderHeightPct, persistBuilderHeightPct, persistSidebarWidth, setTheme,
 } from '../store.js'
