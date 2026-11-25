@@ -2,26 +2,32 @@
     <AuthView v-if="!store.token" @authenticated="onAuthenticated" />
     <div v-else class="pm-canvas flex h-screen flex-col overflow-hidden">
         <TopBar
+            ref="topbar"
             @logged-out="onLoggedOut"
             @manage-environments="sidebarTab = 'environments'"
             @imported="sidebarTab = 'collections'"
             @toggle-console="store.consoleOpen = !store.consoleOpen"
             @open-runner="mainView = 'runner'"
+            @open-palette="paletteOpen = true"
+            @open-shortcuts="shortcutsOpen = true"
         />
-        <div v-if="store.error" class="shrink-0 bg-red-950 px-4 py-2 text-sm text-red-300">
-            {{ store.error }}
+        <div v-if="store.error" class="flex shrink-0 items-center gap-2 bg-red-950 px-4 py-2 text-sm text-red-300">
+            <span class="flex-1">{{ store.error }}</span>
+            <button type="button" @click="store.error = ''" class="rounded px-1.5 py-0.5 hover:bg-white/10" title="Dismiss" aria-label="Dismiss error">✕</button>
         </div>
         <div class="flex min-h-0 flex-1">
             <button
                 v-if="store.sidebarCollapsed"
                 type="button"
                 @click="store.sidebarCollapsed = false"
-                class="pm-sidebar w-8 shrink-0 border-r pm-border pm-muted hover:pm-text"
-                title="Show sidebar"
+                class="pm-sidebar flex w-8 shrink-0 items-center justify-center border-r pm-border pm-muted hover:pm-text"
+                title="Show sidebar (Ctrl/Cmd+B)"
+                aria-label="Show sidebar"
             >
-                ❯
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><path d="M6 3l5 5-5 5" /></svg>
             </button>
             <Sidebar
+                ref="sidebar"
                 v-show="!store.sidebarCollapsed"
                 :active-request-id="activeTab().request.id"
                 :active-tab="sidebarTab"
@@ -38,6 +44,19 @@
             ></div>
             <main class="flex min-h-0 min-w-0 flex-1 flex-col">
                 <RunnerView v-if="mainView === 'runner'" @close="mainView = 'builder'" />
+                <EmptyState
+                    v-else-if="!store.loading && store.workspaces.length === 0"
+                    title="No workspace yet"
+                    description="Workspaces hold your collections, environments and history. Create one to start sending requests."
+                    icon-color-class="pm-accent-text"
+                >
+                    <template #icon>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="h-6 w-6"><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></svg>
+                    </template>
+                    <template #actions>
+                        <button type="button" @click="openWorkspaceModal" class="pm-btn pm-btn-primary">Create workspace</button>
+                    </template>
+                </EmptyState>
                 <template v-else>
                 <RequestTabs
                     :tabs="store.tabs"
@@ -47,9 +66,15 @@
                     @new="openTab()"
                 />
                 <div class="min-h-0 overflow-y-auto" :style="{ height: builderHeightPct + '%' }">
+                    <div v-if="activeTab().saveConflict" class="flex items-center gap-2 border-b border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
+                        <span class="flex-1 text-amber-200">This request was changed by someone else since you opened it. Your edits are still here — reload to see their version first.</span>
+                        <button type="button" @click="reloadConflict(activeTab())" class="pm-btn pm-btn-sm">Reload their version</button>
+                        <button type="button" @click="activeTab().saveConflict = null" class="pm-btn pm-btn-ghost pm-btn-sm">Keep editing mine</button>
+                    </div>
                     <RequestBuilder
                         :request="activeTab().request"
                         :sending="activeTab().sending"
+                        :saving="activeTab().saving"
                         :save-message="activeTab().saveMessage"
                         :save-message-is-error="activeTab().saveMessageIsError"
                         :is-dirty="isTabDirty(activeTab())"
@@ -58,7 +83,8 @@
                     />
                 </div>
                 <div class="pm-resizer pm-resizer-v h-1 w-full" @mousedown="startSplitResize" title="Drag to resize"></div>
-                <ResponseViewer :response="activeTab().response" :sending="activeTab().sending" />
+                <ResponseViewer :response="activeTab().response" :sending="activeTab().sending" :request="activeTab().request" :loading="store.loading" @examples-changed="onExamplesChanged" @open-palette="paletteOpen = true" />
+
                 </template>
             </main>
         </div>
@@ -70,26 +96,48 @@
         />
         <!-- Status bar -->
         <footer class="pm-topbar flex h-7 shrink-0 items-center gap-4 border-t pm-border px-3 text-[11px] pm-muted">
-            <button type="button" @click="store.sidebarCollapsed = !store.sidebarCollapsed" class="hover:pm-text" title="Toggle sidebar">
+            <button type="button" @click="store.sidebarCollapsed = !store.sidebarCollapsed" class="hover:pm-text" title="Toggle sidebar (Ctrl/Cmd+B)">
                 {{ store.sidebarCollapsed ? '❯ Sidebar' : '❮ Sidebar' }}
             </button>
             <button type="button" @click="store.consoleOpen = !store.consoleOpen" class="hover:pm-text" title="Toggle console (Ctrl/Cmd+Alt+C)">
                 Console
+            </button>
+            <button type="button" @click="shortcutsOpen = true" class="hover:pm-text" title="Keyboard shortcuts (?)">
+                Shortcuts
+            </button>
+            <button type="button" @click="paletteOpen = true" class="hover:pm-text" title="Command palette (Ctrl/Cmd+K)">
+                ⌘K
             </button>
             <span class="flex-1"></span>
             <span>{{ store.tabs.length }} tab{{ store.tabs.length === 1 ? '' : 's' }}</span>
             <span>{{ activeEnvironmentName }}</span>
             <span>Theme: {{ store.theme }}</span>
         </footer>
+        <CommandPalette
+            :open="paletteOpen"
+            @close="paletteOpen = false"
+            @jump-request="loadRequest($event, false)"
+            @jump-collection="jumpToCollection"
+            @new-request="openTab()"
+            @new-collection="openNewCollection"
+            @new-environment="openNewEnvironment"
+            @switch-workspace="switchWorkspace"
+            @switch-environment="switchEnvironment"
+            @run-action="runPaletteAction"
+        />
+        <ShortcutsModal :open="shortcutsOpen" @close="shortcutsOpen = false" />
+        <Toasts />
     </div>
 </template>
 
 <script>
 import { api, errMessage } from '../api.js'
 import {
-    store, loadAll, loadCollections, loadCollectionDetail, loadHistories,
+    loadAll, loadCollections, loadCollectionDetail, loadHistories, loadEnvironments,
     blankRequest, activeTab, openTab, closeTab, isTabDirty, markTabSaved, logConsole,
+    storedBuilderHeightPct, persistBuilderHeightPct, persistSidebarWidth, setTheme,
 } from '../store.js'
+import { toastSuccess, toastError, toastInfo } from '../utils/toast.js'
 import AuthView from './AuthView.vue'
 import TopBar from './TopBar.vue'
 import Sidebar from './Sidebar.vue'
@@ -98,6 +146,10 @@ import RequestBuilder from './RequestBuilder.vue'
 import ResponseViewer from './ResponseViewer.vue'
 import RunnerView from './RunnerView.vue'
 import ConsoleDrawer from './ConsoleDrawer.vue'
+import CommandPalette from './CommandPalette.vue'
+import ShortcutsModal from './ShortcutsModal.vue'
+import Toasts from './Toasts.vue'
+import EmptyState from './EmptyState.vue'
 
 // Normalise a saved request (either shape) into builder state.
 function normalizeRequest(saved) {
@@ -150,6 +202,7 @@ function normalizeRequest(saved) {
     )
     req.settings = Object.assign({ timeout: 30, max_redirects: 5, follow_redirects: true, verify_ssl: true, send_cookies: true }, saved.settings || {})
     req.description = saved.description || ''
+    req.examples = Array.isArray(saved.examples) ? saved.examples : []
     return req
 }
 
@@ -189,13 +242,15 @@ function cleanRows(rows) {
 
 export default {
     name: 'App',
-    components: { AuthView, TopBar, Sidebar, RequestTabs, RequestBuilder, ResponseViewer, RunnerView, ConsoleDrawer },
+    components: { AuthView, TopBar, Sidebar, RequestTabs, RequestBuilder, ResponseViewer, RunnerView, ConsoleDrawer, CommandPalette, ShortcutsModal, Toasts, EmptyState },
     data() {
         return {
             store,
             sidebarTab: 'collections',
-            builderHeightPct: 48,
+            builderHeightPct: storedBuilderHeightPct(),
             mainView: 'builder',
+            paletteOpen: false,
+            shortcutsOpen: false,
         }
     },
     computed: {
@@ -211,7 +266,7 @@ export default {
             loadAll().catch(() => {
                 // loadAll surfaces the error in store.error; stay logged in
                 // with whatever cached state we have.
-            })
+            }).finally(() => { this.acceptInviteFromUrl() })
         }
     },
     beforeUnmount() {
@@ -226,8 +281,31 @@ export default {
         onUnauthorized() {
             this.resetActiveTab()
         },
+        onExamplesChanged(examples) {
+            // Examples are saved server-side already; keep the tab's
+            // dirty state untouched (other edits may still be unsaved).
+            activeTab().request.examples = examples
+        },
         async onAuthenticated() {
             await loadAll().catch(() => {})
+            this.acceptInviteFromUrl()
+        },
+        /** Accept a workspace invite link (?invite=<token>) once logged in. */
+        async acceptInviteFromUrl() {
+            const params = new URLSearchParams(window.location.search)
+            const token = params.get('invite')
+            if (!token || !store.token) return
+            try {
+                const workspace = await api.acceptInvitation(token)
+                toastSuccess('Joined workspace' + (workspace && workspace.name ? ' ' + workspace.name : '') + '.')
+                await loadAll().catch(() => {})
+            } catch (e) {
+                toastError('Could not accept the invitation: ' + errMessage(e))
+            } finally {
+                params.delete('invite')
+                const query = params.toString()
+                window.history.replaceState({}, '', window.location.pathname + (query ? '?' + query : ''))
+            }
         },
         onLoggedOut() {
             this.resetActiveTab()
@@ -242,9 +320,64 @@ export default {
             tab.savedSnapshot = JSON.stringify(fresh)
             tab.saveMessage = ''
         },
+        openWorkspaceModal() {
+            if (this.$refs.topbar && this.$refs.topbar.openWorkspaceModal) this.$refs.topbar.openWorkspaceModal()
+        },
+        openNewCollection() {
+            store.sidebarCollapsed = false
+            this.sidebarTab = 'collections'
+            this.$nextTick(() => {
+                if (this.$refs.sidebar) this.$refs.sidebar.openPrompt('collection', null)
+            })
+        },
+        openNewEnvironment() {
+            store.sidebarCollapsed = false
+            this.sidebarTab = 'environments'
+            this.$nextTick(() => {
+                if (this.$refs.sidebar) this.$refs.sidebar.openEnvironmentEditor(null)
+            })
+        },
+        jumpToCollection(collection) {
+            store.sidebarCollapsed = false
+            this.sidebarTab = 'collections'
+            store.searchQuery = collection.name || ''
+        },
+        async switchWorkspace(id) {
+            store.activeWorkspaceId = id
+            store.activeEnvironmentId = null
+            try {
+                await Promise.all([loadCollections(), loadEnvironments()])
+                this.sidebarTab = 'collections'
+            } catch (e) {
+                toastError('Could not switch workspace: ' + errMessage(e))
+            }
+        },
+        async switchEnvironment(id) {
+            store.activeEnvironmentId = id
+            try { await api.activateEnvironment(id) } catch (e) { /* local selection still stands */ }
+        },
+        runPaletteAction(action) {
+            if (action === 'send') this.handleSend(activeTab())
+            else if (action === 'save') this.handleSave(activeTab())
+            else if (action === 'new-tab') openTab()
+            else if (action === 'new-request') openTab()
+            else if (action === 'new-collection') this.openNewCollection()
+            else if (action === 'new-environment') this.openNewEnvironment()
+            else if (action === 'runner') this.mainView = 'runner'
+            else if (action === 'console') store.consoleOpen = !store.consoleOpen
+            else if (action === 'theme') setTheme(store.theme === 'dark' ? 'light' : 'dark')
+            else if (action === 'shortcuts') this.shortcutsOpen = true
+        },
         onKeydown(event) {
             if (!store.token) return
             const mod = event.ctrlKey || event.metaKey
+            const typing = event.target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName)
+            // "?" opens the shortcuts list when not typing.
+            if (!mod && !typing && event.key === '?') {
+                event.preventDefault()
+                this.shortcutsOpen = true
+                return
+            }
             if (!mod) return
             if (event.key === 'Enter') {
                 event.preventDefault()
@@ -260,8 +393,10 @@ export default {
                 store.consoleOpen = !store.consoleOpen
             } else if (event.key.toLowerCase() === 'k') {
                 event.preventDefault()
-                const input = document.querySelector('input[placeholder*="Search collections"]')
-                if (input) input.focus()
+                this.paletteOpen = !this.paletteOpen
+            } else if (event.key.toLowerCase() === 'b') {
+                event.preventDefault()
+                store.sidebarCollapsed = !store.sidebarCollapsed
             }
         },
         async loadRequest(saved, newTab) {
@@ -284,6 +419,7 @@ export default {
                     tab.response = null
                 }
                 tab.savedSnapshot = JSON.stringify(req)
+                toastError('Could not load the full request: ' + errMessage(e))
             }
         },
         // Full restore from a history entry: request snapshot + stored response.
@@ -363,6 +499,9 @@ export default {
                 settings: req.settings,
                 description: req.description || '',
                 folder_id: req.folder_id,
+                // Optimistic locking: the server 409s when the stored row
+                // is newer than the updated_at we last saw.
+                updated_at: req.updated_at || null,
             }
         },
         async handleSend(tab) {
@@ -421,11 +560,13 @@ export default {
                     is_json: false,
                 }
                 logConsole({ method: tab.request.method, url: tab.request.url, error: errMessage(e) })
+                toastError('Send failed: ' + errMessage(e))
             } finally {
                 tab.sending = false
             }
         },
         async handleSave(tab) {
+            if (tab.saving) return
             tab.saveMessage = ''
             tab.saveMessageIsError = false
             let collectionId = tab.request.collection_id
@@ -436,9 +577,11 @@ export default {
                 } else {
                     tab.saveMessage = 'Create a collection first, then save.'
                     tab.saveMessageIsError = true
+                    toastInfo('Create a collection first, then save this request.')
                     return
                 }
             }
+            tab.saving = true
             try {
                 const payload = this.requestPayload(tab)
                 let saved
@@ -449,11 +592,33 @@ export default {
                 }
                 if (saved && saved.id) tab.request.id = saved.id
                 markTabSaved(tab)
+                toastSuccess('Request saved.')
                 await loadCollectionDetail(collectionId)
             } catch (e) {
-                tab.saveMessage = 'Save failed: ' + errMessage(e)
-                tab.saveMessageIsError = true
+                if (e.response && e.response.status === 409) {
+                    // Someone else saved this request first — keep the
+                    // user's edits, offer their version via the banner.
+                    tab.saveConflict = (e.response.data && e.response.data.data) || null
+                    tab.saveMessage = 'Someone else changed this request. Reload their version or keep editing yours.'
+                    tab.saveMessageIsError = true
+                    toastError('Save conflict: this request was changed by someone else.')
+                } else {
+                    tab.saveMessage = 'Save failed: ' + errMessage(e)
+                    tab.saveMessageIsError = true
+                    toastError('Save failed: ' + errMessage(e))
+                }
+            } finally {
+                tab.saving = false
             }
+        },
+        reloadConflict(tab) {
+            const fresh = tab.saveConflict
+            if (!fresh) return
+            tab.saveConflict = null
+            this.loadRequest(fresh, false)
+            tab.saveMessage = ''
+            tab.saveMessageIsError = false
+            toastInfo('Reloaded the latest saved version.')
         },
         // ---- Resizable sidebar / builder-response split ----
         startSidebarResize(event) {
@@ -466,6 +631,7 @@ export default {
             const onUp = () => {
                 window.removeEventListener('mousemove', onMove)
                 window.removeEventListener('mouseup', onUp)
+                persistSidebarWidth(store.sidebarWidth)
             }
             window.addEventListener('mousemove', onMove)
             window.addEventListener('mouseup', onUp)
@@ -481,6 +647,7 @@ export default {
             const onUp = () => {
                 window.removeEventListener('mousemove', onMove)
                 window.removeEventListener('mouseup', onUp)
+                persistBuilderHeightPct(this.builderHeightPct)
             }
             window.addEventListener('mousemove', onMove)
             window.addEventListener('mouseup', onUp)

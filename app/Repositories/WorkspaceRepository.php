@@ -4,6 +4,7 @@ namespace App\Repositories;
 
 use Arafat\LaravelRepository\Repository;
 use App\Models\Workspace;
+use App\Services\WorkspaceAccess;
 
 class WorkspaceRepository extends Repository
 {
@@ -12,12 +13,22 @@ class WorkspaceRepository extends Repository
         return Workspace::class;
     }
 
+    /** Workspaces the user owns or is a member of. */
     public static function forUser(int $userId)
     {
-        return self::query()->where('user_id', $userId)->orderBy('name')->get();
+        return self::query()->whereIn('id', WorkspaceAccess::accessibleWorkspaceIds($userId))
+            ->orderBy('name')->get();
     }
 
+    /** One workspace the user owns or is a member of, or null. */
     public static function findForUser(int $id, int $userId): ?Workspace
+    {
+        return self::query()->where('id', $id)
+            ->whereIn('id', WorkspaceAccess::accessibleWorkspaceIds($userId))->first();
+    }
+
+    /** One workspace the user owns, or null. */
+    public static function findOwned(int $id, int $userId): ?Workspace
     {
         return self::query()->where('id', $id)->where('user_id', $userId)->first();
     }

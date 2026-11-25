@@ -12,6 +12,7 @@ class GlobalVariable extends Model
 
     protected $fillable = [
         'user_id',
+        'workspace_id',
         'key',
         'initial_value',
         'current_value',
@@ -25,6 +26,11 @@ class GlobalVariable extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function workspace(): BelongsTo
+    {
+        return $this->belongsTo(Workspace::class);
     }
 
     /** Effective value: current wins, initial is the fallback. */
@@ -48,6 +54,8 @@ class GlobalVariable extends Model
     {
         return [
             'id' => $this->id,
+            'user_id' => $this->user_id,
+            'workspace_id' => $this->workspace_id,
             'key' => $this->key,
             'initial_value' => $this->isSecret() && ! $reveal ? null : $this->initial_value,
             'current_value' => $this->isSecret() && ! $reveal ? null : $this->current_value,

@@ -24,7 +24,11 @@ class VariableController extends Controller
      */
     public function resolve(Request $request, Environment $environment): JsonResponse
     {
-        abort_unless($environment->user_id === auth()->id(), 403, 'You do not own this environment.');
+        abort_unless(
+            EnvironmentRepository::findForUser($environment->id, auth()->id()),
+            403,
+            'You do not have access to this environment.'
+        );
 
         $request->merge(['environment_id' => $environment->id]);
 
@@ -49,8 +53,8 @@ class VariableController extends Controller
 
         $environment = null;
         if ($request->filled('environment_id')) {
-            $environment = EnvironmentRepository::findOrFail((int) $request->query('environment_id'));
-            abort_unless($environment->user_id === $userId, 403, 'You do not own this environment.');
+            $environment = EnvironmentRepository::findForUser((int) $request->query('environment_id'), $userId);
+            abort_unless($environment, 403, 'You do not have access to this environment.');
             $workspace ??= $environment->workspace;
         }
 

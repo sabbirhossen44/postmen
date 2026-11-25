@@ -191,6 +191,8 @@ class CurlImporter
         $collection ??= Collection::create([
             'workspace_id' => $workspace->id,
             'user_id' => $user->id,
+            'created_by' => $user->id,
+            'updated_by' => $user->id,
             'name' => 'cURL Import',
         ]);
 
@@ -202,6 +204,8 @@ class CurlImporter
                 'collection_id' => $collection->id,
                 'folder_id' => null,
                 'user_id' => $user->id,
+                'created_by' => $user->id,
+                'updated_by' => $user->id,
                 'sort_order' => $index,
             ]);
         }

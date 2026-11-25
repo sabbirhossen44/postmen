@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\ExchangeOAuthTokenRequest;
 use App\Models\ApiRequest;
 use App\Services\OAuthTokenService;
+use App\Services\WorkspaceAccess;
 use Illuminate\Http\JsonResponse;
 
 class OAuthController extends Controller
@@ -17,7 +18,9 @@ class OAuthController extends Controller
      */
     public function exchange(ExchangeOAuthTokenRequest $request, ApiRequest $apiRequest, OAuthTokenService $service): JsonResponse
     {
-        abort_unless($apiRequest->user_id === auth()->id(), 403, 'You do not own this request.');
+        // Token exchange is part of sending a request, so any role that
+        // may view the workspace may do it.
+        WorkspaceAccess::requireCollectionView(auth()->user(), $apiRequest->collection);
 
         try {
             $token = $service->exchange($apiRequest->auth ?? [], $request->validated());

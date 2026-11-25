@@ -6,8 +6,8 @@
                 :key="t.key"
                 type="button"
                 @click="tab = t.key"
-                :class="tab === t.key ? 'border-[#FF6C37] pm-text' : 'border-transparent pm-muted hover:pm-text'"
-                class="flex-1 border-b-2 px-2 py-2.5 text-xs font-medium"
+                :class="tab === t.key ? 'pm-tab-active' : ''"
+                class="pm-tab flex-1"
             >
                 {{ t.label }}
             </button>
@@ -17,24 +17,43 @@
         <div v-show="tab === 'collections'" class="flex min-h-0 flex-1 flex-col">
             <div class="p-2">
                 <button
+                    v-if="canEdit"
                     type="button"
                     @click="openPrompt('collection', null)"
-                    class="pm-accent-bg w-full rounded px-3 py-2 text-sm font-medium text-white"
+                    class="pm-btn pm-btn-primary w-full"
                 >
                     + New Collection
                 </button>
                 <div class="mt-2 flex gap-2">
-                    <button type="button" @click="expandAll" class="flex-1 rounded border pm-border px-2 py-1 text-xs pm-text-2 hover:pm-active">Expand all</button>
-                    <button type="button" @click="collapseAll" class="flex-1 rounded border pm-border px-2 py-1 text-xs pm-text-2 hover:pm-active">Collapse all</button>
+                    <button type="button" @click="expandAll" class="pm-btn pm-btn-ghost pm-btn-sm flex-1">Expand all</button>
+                    <button type="button" @click="collapseAll" class="pm-btn pm-btn-ghost pm-btn-sm flex-1">Collapse all</button>
                 </div>
             </div>
             <div class="min-h-0 flex-1 overflow-y-auto px-2 pb-4" @click="closeContextMenu">
-                <p v-if="store.collections.length === 0" class="px-2 py-4 text-sm pm-faint">
-                    No collections yet. Create one to start saving requests.
-                </p>
-                <p v-else-if="filteredCollections.length === 0" class="px-2 py-4 text-sm pm-faint">
-                    Nothing matches "{{ store.searchQuery }}".
-                </p>
+                <div v-if="store.loading && store.collections.length === 0" class="flex flex-col gap-2 px-2 py-3" aria-hidden="true">
+                    <div class="pm-skeleton h-8 w-full"></div>
+                    <div class="pm-skeleton h-8 w-11/12"></div>
+                    <div class="pm-skeleton h-8 w-10/12"></div>
+                    <div class="pm-skeleton h-8 w-9/12"></div>
+                </div>
+                <EmptyState
+                    v-else-if="store.collections.length === 0"
+                    title="No collections yet"
+                    description="Collections group your requests so you can save, organise and run them together."
+                >
+                    <template #actions>
+                        <button v-if="canEdit" type="button" @click="openPrompt('collection', null)" class="pm-btn pm-btn-primary pm-btn-sm">New Collection</button>
+                    </template>
+                </EmptyState>
+                <EmptyState
+                    v-else-if="filteredCollections.length === 0"
+                    title="No matches"
+                    :description="'Nothing matches &quot;' + store.searchQuery + '&quot;. Try a different search or clear the filter.'"
+                >
+                    <template #actions>
+                        <button type="button" @click="store.searchQuery = ''" class="pm-btn pm-btn-ghost pm-btn-sm">Clear search</button>
+                    </template>
+                </EmptyState>
                 <div v-for="collection in filteredCollections" :key="collection.id" class="mb-1">
                     <div
                         class="group flex items-center gap-1 rounded px-2 py-1.5 pm-hover"
@@ -48,11 +67,11 @@
                         </button>
                         <span class="shrink-0 text-xs pm-faint">{{ collectionRequestCount(collection) }}</span>
                         <span class="hidden shrink-0 gap-0.5 group-hover:flex">
-                            <button type="button" @click="openPrompt('request', collection)" title="New request" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active">+ Req</button>
-                            <button type="button" @click="openPrompt('folder', collection)" title="New folder" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active">+ Dir</button>
+                            <button v-if="canEdit" type="button" @click="openPrompt('request', collection)" title="New request" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active">+ Req</button>
+                            <button v-if="canEdit" type="button" @click="openPrompt('folder', collection)" title="New folder" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active">+ Dir</button>
                             <button type="button" @click="exportCollection(collection)" title="Export collection" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active">↓</button>
-                            <button type="button" @click="openPrompt('rename-collection', collection)" title="Rename" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active">✎</button>
-                            <button type="button" @click="askDelete('collection', collection)" title="Delete" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active hover:text-red-400">✕</button>
+                            <button v-if="canEdit" type="button" @click="openPrompt('rename-collection', collection)" title="Rename" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active">✎</button>
+                            <button v-if="canEdit" type="button" @click="askDelete('collection', collection)" title="Delete" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active hover:text-red-400">✕</button>
                         </span>
                     </div>
 
@@ -67,12 +86,12 @@
                                 <span class="pm-faint">▸</span>
                                 <span class="min-w-0 flex-1 truncate text-sm pm-text-2">{{ folder.name }}</span>
                                 <span class="hidden shrink-0 gap-0.5 group-hover:flex">
-                                    <button type="button" @click="moveFolder(folder, collection, -1)" title="Move up" class="rounded px-1 py-0.5 pm-muted hover:pm-active">↑</button>
-                                    <button type="button" @click="moveFolder(folder, collection, 1)" title="Move down" class="rounded px-1 py-0.5 pm-muted hover:pm-active">↓</button>
-                                    <button type="button" @click="openPrompt('request-folder', { collection, folder })" title="New request in folder" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active">+ Req</button>
-                                    <button type="button" @click="openPrompt('folder-child', { collection, folder })" title="New sub-folder" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active">+ Dir</button>
-                                    <button type="button" @click="openPrompt('rename-folder', folder)" title="Rename" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active">✎</button>
-                                    <button type="button" @click="askDelete('folder', folder)" title="Delete" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active hover:text-red-400">✕</button>
+                                    <button v-if="canEdit" type="button" @click="moveFolder(folder, collection, -1)" title="Move up" class="rounded px-1 py-0.5 pm-muted hover:pm-active">↑</button>
+                                    <button v-if="canEdit" type="button" @click="moveFolder(folder, collection, 1)" title="Move down" class="rounded px-1 py-0.5 pm-muted hover:pm-active">↓</button>
+                                    <button v-if="canEdit" type="button" @click="openPrompt('request-folder', { collection, folder })" title="New request in folder" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active">+ Req</button>
+                                    <button v-if="canEdit" type="button" @click="openPrompt('folder-child', { collection, folder })" title="New sub-folder" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active">+ Dir</button>
+                                    <button v-if="canEdit" type="button" @click="openPrompt('rename-folder', folder)" title="Rename" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active">✎</button>
+                                    <button v-if="canEdit" type="button" @click="askDelete('folder', folder)" title="Delete" class="rounded px-1.5 py-0.5 pm-text-2 hover:pm-active hover:text-red-400">✕</button>
                                 </span>
                             </div>
                             <div
@@ -94,10 +113,10 @@
                                     <span :class="'shrink-0 font-mono text-[11px] font-bold ' + methodClass(req.method)">{{ (req.method || 'GET').toUpperCase() }}</span>
                                     <span class="min-w-0 flex-1 truncate text-sm pm-text-2">{{ req.name || req.url }}</span>
                                     <span class="hidden shrink-0 gap-0.5 group-hover:flex">
-                                        <span @click.stop="moveRequest(req, collection, -1)" title="Move up" class="rounded px-1 py-0.5 pm-muted hover:pm-active">↑</span>
-                                        <span @click.stop="moveRequest(req, collection, 1)" title="Move down" class="rounded px-1 py-0.5 pm-muted hover:pm-active">↓</span>
-                                        <span @click.stop="duplicateRequest(req)" title="Duplicate" class="rounded px-1 py-0.5 pm-muted hover:pm-active">⧉</span>
-                                        <span @click.stop="askDelete('request', req)" title="Delete" class="rounded px-1 py-0.5 pm-muted hover:pm-active hover:text-red-400">✕</span>
+                                        <span v-if="canEdit" @click.stop="moveRequest(req, collection, -1)" title="Move up" class="rounded px-1 py-0.5 pm-muted hover:pm-active">↑</span>
+                                        <span v-if="canEdit" @click.stop="moveRequest(req, collection, 1)" title="Move down" class="rounded px-1 py-0.5 pm-muted hover:pm-active">↓</span>
+                                        <span v-if="canEdit" @click.stop="duplicateRequest(req)" title="Duplicate" class="rounded px-1 py-0.5 pm-muted hover:pm-active">⧉</span>
+                                        <span v-if="canEdit" @click.stop="askDelete('request', req)" title="Delete" class="rounded px-1 py-0.5 pm-muted hover:pm-active hover:text-red-400">✕</span>
                                     </span>
                                 </button>
                             </div>
@@ -121,10 +140,10 @@
                                 <span :class="'shrink-0 font-mono text-[11px] font-bold ' + methodClass(req.method)">{{ (req.method || 'GET').toUpperCase() }}</span>
                                 <span class="min-w-0 flex-1 truncate text-sm pm-text-2">{{ req.name || req.url }}</span>
                                 <span class="hidden shrink-0 gap-0.5 group-hover:flex">
-                                    <span @click.stop="moveRequest(req, collection, -1)" title="Move up" class="rounded px-1 py-0.5 pm-muted hover:pm-active">↑</span>
-                                    <span @click.stop="moveRequest(req, collection, 1)" title="Move down" class="rounded px-1 py-0.5 pm-muted hover:pm-active">↓</span>
-                                    <span @click.stop="duplicateRequest(req)" title="Duplicate" class="rounded px-1 py-0.5 pm-muted hover:pm-active">⧉</span>
-                                    <span @click.stop="askDelete('request', req)" title="Delete" class="rounded px-1 py-0.5 pm-muted hover:pm-active hover:text-red-400">✕</span>
+                                    <span v-if="canEdit" @click.stop="moveRequest(req, collection, -1)" title="Move up" class="rounded px-1 py-0.5 pm-muted hover:pm-active">↑</span>
+                                    <span v-if="canEdit" @click.stop="moveRequest(req, collection, 1)" title="Move down" class="rounded px-1 py-0.5 pm-muted hover:pm-active">↓</span>
+                                    <span v-if="canEdit" @click.stop="duplicateRequest(req)" title="Duplicate" class="rounded px-1 py-0.5 pm-muted hover:pm-active">⧉</span>
+                                    <span v-if="canEdit" @click.stop="askDelete('request', req)" title="Delete" class="rounded px-1 py-0.5 pm-muted hover:pm-active hover:text-red-400">✕</span>
                                 </span>
                             </button>
                         </div>
@@ -137,9 +156,10 @@
         <div v-show="tab === 'environments'" class="flex min-h-0 flex-1 flex-col">
             <div class="p-2">
                 <button
+                    v-if="canEdit"
                     type="button"
                     @click="openEnvironmentEditor(null)"
-                    class="pm-accent-bg w-full rounded px-3 py-2 text-sm font-medium text-white"
+                    class="pm-btn pm-btn-primary w-full"
                 >
                     + New Environment
                 </button>
@@ -153,7 +173,7 @@
                     <button type="button" @click="openGlobalsEditor" class="rounded px-1.5 py-0.5 text-xs pm-text-2 hover:pm-active" title="Edit globals">✎ Edit</button>
                 </div>
                 <p v-if="store.globalsUnavailable" class="px-1 py-1 text-xs text-amber-400">
-                    Globals are not available yet — the GET /api/globals endpoint is still being built.
+                    Globals could not be loaded. Check your connection and try again.
                 </p>
                 <p v-else-if="store.globals.length === 0" class="px-1 py-1 text-xs pm-faint">
                     No globals yet. Globals apply to every request, below collection and environment variables.
@@ -166,9 +186,15 @@
             </div>
 
             <div class="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
-                <p v-if="store.environments.length === 0" class="px-2 py-4 text-sm pm-faint">
-                    No environments yet. Add one to use {{variables}} in URLs.
-                </p>
+                <EmptyState
+                    v-if="store.environments.length === 0"
+                    title="No environments yet"
+                    :description="'Environments hold {{variables}} for your URLs — one set per stage, like dev or production.'"
+                >
+                    <template #actions>
+                        <button type="button" @click="openEnvironmentEditor(null)" class="pm-btn pm-btn-primary pm-btn-sm">New Environment</button>
+                    </template>
+                </EmptyState>
                 <div
                     v-for="env in store.environments"
                     :key="env.id"
@@ -197,15 +223,21 @@
                     type="button"
                     @click="askDelete('clear-history', null)"
                     :disabled="store.histories.length === 0"
-                    class="w-full rounded border pm-border px-3 py-2 text-sm pm-text-2 hover:pm-active disabled:opacity-50"
+                    class="pm-btn pm-btn-ghost w-full"
                 >
                     Clear History
                 </button>
             </div>
             <div class="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
-                <p v-if="store.histories.length === 0" class="px-2 py-4 text-sm pm-faint">
-                    No requests sent yet.
-                </p>
+                <EmptyState
+                    v-if="store.histories.length === 0"
+                    title="No history yet"
+                    description="Every request you send is saved here, with its response, so you can restore it later."
+                >
+                    <template #actions>
+                        <button type="button" @click="$emit('clear-request')" class="pm-btn pm-btn-primary pm-btn-sm">Send your first request</button>
+                    </template>
+                </EmptyState>
                 <div v-for="item in filteredHistories" :key="item.id" class="group mb-1 flex items-center gap-2 rounded px-2 py-1.5 pm-hover">
                     <button type="button" @click="loadHistory(item)" class="min-w-0 flex-1 text-left" title="Restore this request and show its stored response">
                         <span class="flex items-center gap-2">
@@ -236,10 +268,14 @@
             :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
         >
             <button v-if="contextMenu.kind === 'request'" type="button" @click="contextOpenInNewTab" class="block w-full px-3 py-1.5 text-left text-sm pm-text-2 pm-hover">Open in New Tab</button>
-            <button v-if="contextMenu.kind === 'request'" type="button" @click="contextDuplicate" class="block w-full px-3 py-1.5 text-left text-sm pm-text-2 pm-hover">Duplicate</button>
+            <button v-if="canEdit && contextMenu.kind === 'request'" type="button" @click="contextDuplicate" class="block w-full px-3 py-1.5 text-left text-sm pm-text-2 pm-hover">Duplicate</button>
+            <button v-if="canEdit && contextMenu.kind === 'request'" type="button" @click="contextMove" class="block w-full px-3 py-1.5 text-left text-sm pm-text-2 pm-hover">Move to…</button>
+            <button v-if="canEdit && contextMenu.kind === 'collection'" type="button" @click="contextFork" class="block w-full px-3 py-1.5 text-left text-sm pm-text-2 pm-hover">Fork</button>
+            <button v-if="canEdit && contextMenu.kind === 'collection'" type="button" @click="contextDuplicateCollection" class="block w-full px-3 py-1.5 text-left text-sm pm-text-2 pm-hover">Duplicate</button>
+            <button v-if="contextMenu.kind === 'collection'" type="button" @click="contextDocumentation" class="block w-full px-3 py-1.5 text-left text-sm pm-text-2 pm-hover">Documentation</button>
             <button v-if="contextMenu.kind === 'collection'" type="button" @click="contextExport" class="block w-full px-3 py-1.5 text-left text-sm pm-text-2 pm-hover">Export</button>
-            <button type="button" @click="contextRename" class="block w-full px-3 py-1.5 text-left text-sm pm-text-2 pm-hover">Rename</button>
-            <button type="button" @click="contextDelete" class="block w-full px-3 py-1.5 text-left text-sm pm-text-2 pm-hover">Delete</button>
+            <button v-if="canEdit" type="button" @click="contextRename" class="block w-full px-3 py-1.5 text-left text-sm pm-text-2 pm-hover">Rename</button>
+            <button v-if="canEdit" type="button" @click="contextDelete" class="block w-full px-3 py-1.5 text-left text-sm pm-text-2 pm-hover">Delete</button>
         </div>
 
         <!-- Prompt modal: new collection / folder / request name / rename -->
@@ -256,7 +292,7 @@
                 v-model="prompt.value"
                 type="text"
                 placeholder="Name"
-                class="w-full rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]"
+                class="pm-field"
                 @keyup.enter="confirmPrompt"
             >
             <p v-if="prompt.error" class="mt-3 text-sm text-red-400">{{ prompt.error }}</p>
@@ -267,6 +303,7 @@
             :open="confirmDelete.open"
             title="Delete?"
             confirm-label="Delete"
+            danger
             @close="confirmDelete.open = false"
             @confirm="doDelete"
         >
@@ -287,7 +324,7 @@
                 v-model="envEditor.name"
                 type="text"
                 placeholder="Environment name"
-                class="mb-4 w-full rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]"
+                class="pm-field mb-4"
             >
             <label class="mb-1 block text-xs font-medium pm-muted">Variables</label>
             <KeyValueEditor :rows="envEditor.variables" key-placeholder="Variable" value-placeholder="Value" />
@@ -311,15 +348,15 @@
                 <span class="w-8 shrink-0"></span>
             </div>
             <div v-for="(row, i) in globalsEditor.rows" :key="i" class="mb-1 flex items-center gap-2">
-                <input v-model="row.key" type="text" placeholder="Variable" class="w-1/4 rounded border pm-input px-2 py-1.5 text-sm outline-none focus:border-[#FF6C37]">
-                <input v-model="row.initial" type="text" placeholder="Initial" class="min-w-0 flex-1 rounded border pm-input px-2 py-1.5 text-sm outline-none focus:border-[#FF6C37]">
+                <input v-model="row.key" type="text" placeholder="Variable" class="pm-field w-1/4">
+                <input v-model="row.initial" type="text" placeholder="Initial" class="pm-field min-w-0 flex-1">
                 <input
                     v-model="row.current"
                     :type="row.type === 'secret' && !row.showSecret ? 'password' : 'text'"
                     placeholder="Current"
-                    class="min-w-0 flex-1 rounded border pm-input px-2 py-1.5 text-sm outline-none focus:border-[#FF6C37]"
+                    class="pm-field min-w-0 flex-1"
                 >
-                <select v-model="row.type" class="w-20 shrink-0 rounded border pm-input px-1 py-1.5 text-xs outline-none">
+                <select v-model="row.type" class="pm-field pm-field-xs w-20 shrink-0">
                     <option value="text">Text</option>
                     <option value="secret">Secret</option>
                 </select>
@@ -337,19 +374,50 @@
             <button type="button" @click="globalsEditor.rows.push({ key: '', initial: '', current: '', type: 'text', showSecret: false, enabled: true })" class="mt-1 rounded px-2 py-1 text-sm pm-muted hover:pm-text-2">+ Add row</button>
             <p v-if="globalsEditor.error" class="mt-3 text-sm text-red-400">{{ globalsEditor.error }}</p>
         </Modal>
+        <!-- Move request modal -->
+        <Modal
+            :open="moveModal.open"
+            title="Move Request"
+            confirm-label="Move"
+            @close="moveModal.open = false"
+            @confirm="doMove"
+        >
+            <p class="mb-3 text-sm pm-text-2">Move “{{ moveModal.request ? moveModal.request.name : '' }}” to:</p>
+            <label class="mb-1 block text-xs font-medium pm-muted">Collection</label>
+            <select
+                v-model="moveModal.collectionId"
+                @change="loadMoveFolders"
+                class="mb-3 w-full rounded border pm-input px-3 py-2 text-sm outline-none"
+            >
+                <option v-for="c in store.collections" :key="c.id" :value="c.id">{{ c.name }}</option>
+            </select>
+            <label class="mb-1 block text-xs font-medium pm-muted">Folder</label>
+            <select v-model="moveModal.folderId" class="w-full rounded border pm-input px-3 py-2 text-sm outline-none">
+                <option :value="null">No folder (top level)</option>
+                <option v-for="f in moveModal.folders" :key="f.id" :value="f.id">{{ f.name }}</option>
+            </select>
+            <p v-if="moveModal.error" class="mt-3 text-sm text-red-400">{{ moveModal.error }}</p>
+        </Modal>
+
+        <!-- Collection documentation (read-only, printable) -->
+        <DocumentationModal :open="docModal.open" :collection-id="docModal.collectionId" @close="docModal.open = false" />
     </aside>
 </template>
 
 <script>
 import { api, errMessage } from '../api.js'
-import { store, loadCollections, loadCollectionDetail, loadEnvironments, loadGlobals, loadHistories, loadMoreHistories } from '../store.js'
+import { store, loadCollections, loadCollectionDetail, loadEnvironments, loadGlobals, loadHistories, loadMoreHistories, canEditActiveWorkspace } from '../store.js'
+import { toastSuccess, toastError } from '../utils/toast.js'
 import Modal from './Modals.vue'
 import KeyValueEditor from './KeyValueEditor.vue'
+import DocumentationModal from './DocumentationModal.vue'
+import EmptyState from './EmptyState.vue'
 import { methodClass } from '../utils/methods.js'
 
 export default {
     name: 'Sidebar',
-    components: { Modal, KeyValueEditor },
+    components: { Modal, KeyValueEditor, DocumentationModal, EmptyState },
+
     props: {
         activeRequestId: { type: [Number, String], default: null },
         activeTab: { type: String, default: 'collections' },
@@ -370,10 +438,15 @@ export default {
             envEditor: { open: false, id: null, name: '', variables: [], error: '' },
             globalsEditor: { open: false, rows: [], error: '' },
             contextMenu: { open: false, kind: '', target: null, collection: null, x: 0, y: 0 },
+            docModal: { open: false, collectionId: null },
+            moveModal: { open: false, request: null, collectionId: null, folderId: null, folders: [], error: '' },
             dragRequest: null,
         }
     },
     computed: {
+        canEdit() {
+            return canEditActiveWorkspace()
+        },
         filteredCollections() {
             const q = (store.searchQuery || '').trim().toLowerCase()
             if (!q) return store.collections
@@ -466,6 +539,7 @@ export default {
 
         // ---- Reorder: up/down buttons + drag-drop (same parent only) ----
         async moveRequest(req, collection, dir) {
+            if (!this.requireEdit()) return
             const siblings = this.requestsInFolder(collection, req.folder_id || null)
             const idx = siblings.findIndex((r) => r.id === req.id)
             const other = siblings[idx + dir]
@@ -473,6 +547,7 @@ export default {
             await this.swapSortOrders('request', req, other, collection)
         },
         async moveFolder(folder, collection, dir) {
+            if (!this.requireEdit()) return
             const siblings = this.sortedFolders(collection).filter((f) => (f.parent_id || null) === (folder.parent_id || null))
             const idx = siblings.findIndex((f) => f.id === folder.id)
             const other = siblings[idx + dir]
@@ -495,7 +570,7 @@ export default {
                 }
                 await loadCollectionDetail(collection.id)
             } catch (e) {
-                alert('Reorder failed: ' + errMessage(e))
+                toastError('Reorder failed: ' + errMessage(e))
             }
         },
         onDragStart(event, req) {
@@ -504,6 +579,7 @@ export default {
             try { event.dataTransfer.setData('text/plain', String(req.id)) } catch (e) { /* ignore */ }
         },
         async onDrop(event, targetReq, collection) {
+            if (!this.requireEdit()) return
             const dragged = this.dragRequest
             this.dragRequest = null
             if (!dragged || dragged.id === targetReq.id) return
@@ -522,7 +598,7 @@ export default {
                 }
                 await loadCollectionDetail(collection.id)
             } catch (e) {
-                alert('Reorder failed: ' + errMessage(e))
+                toastError('Reorder failed: ' + errMessage(e))
             }
         },
 
@@ -538,9 +614,86 @@ export default {
             this.closeContextMenu()
         },
         async contextDuplicate() {
+            if (!this.requireEdit()) return
             const req = this.contextMenu.target
             this.closeContextMenu()
             await this.duplicateRequest(req)
+        },
+        async contextFork() {
+            if (!this.requireEdit()) return
+            const collection = this.contextMenu.target
+            this.closeContextMenu()
+            try {
+                await api.forkCollection(collection.id, store.activeWorkspaceId)
+                await loadCollections()
+            } catch (e) {
+                toastError('Fork failed: ' + errMessage(e))
+            }
+        },
+        async contextDuplicateCollection() {
+            if (!this.requireEdit()) return
+            const collection = this.contextMenu.target
+            this.closeContextMenu()
+            try {
+                await api.duplicateCollection(collection.id)
+                await loadCollections()
+            } catch (e) {
+                toastError('Duplicate failed: ' + errMessage(e))
+            }
+        },
+        contextDocumentation() {
+            const collection = this.contextMenu.target
+            this.closeContextMenu()
+            this.docModal = { open: true, collectionId: collection.id }
+        },
+        contextMove() {
+            if (!this.requireEdit()) return
+            const req = this.contextMenu.target
+            this.closeContextMenu()
+            this.moveModal = {
+                open: true,
+                request: req,
+                collectionId: req.collection_id || (this.contextMenu.collection && this.contextMenu.collection.id) || null,
+                folderId: req.folder_id || null,
+                folders: [],
+                error: '',
+            }
+            this.loadMoveFolders()
+        },
+        async loadMoveFolders() {
+            const id = this.moveModal.collectionId
+            if (!id) {
+                this.moveModal.folders = []
+                return
+            }
+            try {
+                const detail = await loadCollectionDetail(id)
+                this.moveModal.folders = (detail.folders || []).slice()
+                    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || String(a.name).localeCompare(String(b.name)))
+                if (this.moveModal.folderId && !this.moveModal.folders.find((f) => f.id === this.moveModal.folderId)) {
+                    this.moveModal.folderId = null
+                }
+            } catch (e) {
+                this.moveModal.folders = []
+            }
+        },
+        async doMove() {
+            if (!this.requireEdit()) return
+            const modal = this.moveModal
+            if (!modal.request || !modal.collectionId) return
+            try {
+                await api.moveRequest(modal.request.id, {
+                    collection_id: modal.collectionId,
+                    folder_id: modal.folderId,
+                })
+                modal.open = false
+                await loadCollections()
+                for (const c of store.collections) {
+                    if (this.expanded[c.id]) await loadCollectionDetail(c.id)
+                }
+            } catch (e) {
+                modal.error = errMessage(e)
+            }
         },
         contextExport() {
             const collection = this.contextMenu.target
@@ -548,6 +701,7 @@ export default {
             this.exportCollection(collection)
         },
         contextRename() {
+            if (!this.requireEdit()) return
             const kind = this.contextMenu.kind
             const target = this.contextMenu.target
             this.closeContextMenu()
@@ -556,14 +710,22 @@ export default {
             else if (kind === 'request') this.openPrompt('rename-request', target)
         },
         contextDelete() {
+            if (!this.requireEdit()) return
             const kind = this.contextMenu.kind
             const target = this.contextMenu.target
             this.closeContextMenu()
             this.askDelete(kind, target)
         },
 
+        // Viewers on a team workspace can look and send, but not change anything.
+        requireEdit() {
+            if (this.canEdit) return true
+            toastError('Viewers cannot edit this workspace.')
+            return false
+        },
         // ---- Prompt modal (create / rename) ----
         openPrompt(mode, target) {
+            if (!this.requireEdit()) return
             const titles = {
                 collection: 'New Collection',
                 folder: 'New Folder',
@@ -585,6 +747,7 @@ export default {
             }
         },
         async confirmPrompt() {
+            if (!this.requireEdit()) return
             const name = this.prompt.value.trim()
             if (!name) return
             const mode = this.prompt.mode
@@ -615,7 +778,7 @@ export default {
                     await loadCollectionDetail(target.collection.id)
                     this.$emit('load-request', req)
                 } else if (mode === 'rename-collection') {
-                    await api.updateCollection(target.id, { name })
+                    await api.updateCollection(target.id, { name, updated_at: target.updated_at || null })
                     await loadCollections()
                 } else if (mode === 'rename-folder') {
                     await api.updateFolder(target.id, { name })
@@ -624,13 +787,14 @@ export default {
                         if (this.expanded[c.id]) await loadCollectionDetail(c.id)
                     }
                 } else if (mode === 'rename-request') {
-                    await api.updateRequest(target.id, { name })
+                    await api.updateRequest(target.id, { name, updated_at: target.updated_at || null })
                     await loadCollections()
                     for (const c of store.collections) {
                         if (this.expanded[c.id]) await loadCollectionDetail(c.id)
                     }
                 }
                 this.prompt.open = false
+                toastSuccess(mode.startsWith('rename') ? 'Renamed.' : 'Created.')
             } catch (e) {
                 this.prompt.error = errMessage(e)
             }
@@ -638,6 +802,7 @@ export default {
 
         // ---- Delete flow ----
         askDelete(kind, target) {
+            if (kind !== 'clear-history' && !this.requireEdit()) return
             const names = {
                 collection: 'Delete collection "' + (target && target.name) + '" and everything in it?',
                 folder: 'Delete folder "' + (target && target.name) + '" and its requests?',
@@ -676,19 +841,22 @@ export default {
                     await api.clearHistories()
                     await loadHistories(1)
                 }
+                toastSuccess(kind === 'clear-history' ? 'History cleared.' : 'Deleted.')
             } catch (e) {
-                alert('Delete failed: ' + errMessage(e))
+                toastError('Delete failed: ' + errMessage(e))
             }
         },
         async duplicateRequest(req) {
+            if (!this.requireEdit()) return
             try {
                 await api.duplicateRequest(req.id)
+                toastSuccess('Request duplicated.')
                 await loadCollections()
                 for (const c of store.collections) {
                     if (this.expanded[c.id]) await loadCollectionDetail(c.id)
                 }
             } catch (e) {
-                alert('Duplicate failed: ' + errMessage(e))
+                toastError('Duplicate failed: ' + errMessage(e))
             }
         },
         async exportCollection(collection) {
@@ -703,8 +871,9 @@ export default {
                 a.click()
                 a.remove()
                 window.URL.revokeObjectURL(url)
+                toastSuccess('Collection exported.')
             } catch (e) {
-                alert('Export failed: ' + errMessage(e))
+                toastError('Export failed: ' + errMessage(e))
             }
         },
 
@@ -715,6 +884,7 @@ export default {
             await loadEnvironments()
         },
         openEnvironmentEditor(env) {
+            if (!this.requireEdit()) return
             this.envEditor = {
                 open: true,
                 id: env ? env.id : null,
@@ -726,6 +896,7 @@ export default {
             }
         },
         async saveEnvironment() {
+            if (!this.requireEdit()) return
             const variables = this.envEditor.variables
                 .filter((v) => v.key.trim() !== '')
                 .map((v) => ({ key: v.key.trim(), value: v.value, enabled: v.enabled !== false }))
@@ -740,6 +911,7 @@ export default {
                     })
                 }
                 this.envEditor.open = false
+                toastSuccess(this.envEditor.id ? 'Environment saved.' : 'Environment created.')
                 await loadEnvironments()
             } catch (e) {
                 this.envEditor.error = errMessage(e)
@@ -782,13 +954,10 @@ export default {
             try {
                 await api.saveGlobals({ workspace_id: store.activeWorkspaceId, variables })
                 this.globalsEditor.open = false
+                toastSuccess('Globals saved.')
                 await loadGlobals()
             } catch (e) {
-                if (api.isMissingEndpoint(e)) {
-                    this.globalsEditor.error = 'Globals are not available yet — the /api/globals endpoint is still being built.'
-                } else {
-                    this.globalsEditor.error = errMessage(e)
-                }
+                this.globalsEditor.error = errMessage(e)
             }
         },
 
@@ -809,7 +978,7 @@ export default {
                 await api.deleteHistory(item.id)
                 await loadHistories(1)
             } catch (e) {
-                alert('Delete failed: ' + errMessage(e))
+                toastError('Delete failed: ' + errMessage(e))
             }
         },
     },

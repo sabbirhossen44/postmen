@@ -25,6 +25,8 @@ class UpdateCollectionRequest extends FormRequest
             'variables.*.type' => ['nullable', 'string', 'in:text,secret'],
             'variables.*.enabled' => ['nullable', 'boolean'],
             'auth' => ['nullable', 'array'],
+            // Optimistic locking — see UpdateRequestRequest.
+            'updated_at' => ['nullable', 'date'],
         ];
     }
 }

@@ -14,8 +14,11 @@ use App\Http\Controllers\Api\OAuthController;
 use App\Http\Controllers\Api\RequestController;
 use App\Http\Controllers\Api\RunController;
 use App\Http\Controllers\Api\SendController;
+use App\Http\Controllers\Api\UserSettingController;
 use App\Http\Controllers\Api\VariableController;
 use App\Http\Controllers\Api\WorkspaceController;
+use App\Http\Controllers\Api\WorkspaceInvitationController;
+use App\Http\Controllers\Api\WorkspaceMemberController;
 use Illuminate\Support\Facades\Route;
 
 // Public auth routes.
@@ -27,9 +30,24 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/auth/user', [AuthController::class, 'user']);
 
     Route::apiResource('workspaces', WorkspaceController::class);
+    Route::post('/workspaces/{workspace}/transfer', [WorkspaceController::class, 'transfer']);
+    Route::get('/workspaces/{workspace}/activity', [WorkspaceController::class, 'activity']);
+
+    // Team workspaces: members and invitations.
+    Route::get('/workspaces/{workspace}/members', [WorkspaceMemberController::class, 'index']);
+    Route::patch('/workspaces/{workspace}/members/{userId}', [WorkspaceMemberController::class, 'update']);
+    Route::delete('/workspaces/{workspace}/members/{userId}', [WorkspaceMemberController::class, 'destroy']);
+    Route::post('/workspaces/{workspace}/leave', [WorkspaceMemberController::class, 'leave']);
+    Route::post('/workspaces/{workspace}/invite', [WorkspaceInvitationController::class, 'invite']);
+    Route::get('/workspaces/{workspace}/invitations', [WorkspaceInvitationController::class, 'index']);
+    Route::post('/workspaces/invitations/{token}/accept', [WorkspaceInvitationController::class, 'accept']);
+    Route::post('/workspaces/invitations/{invitation}/decline', [WorkspaceInvitationController::class, 'decline']);
 
     Route::apiResource('collections', CollectionController::class);
     Route::get('/collections/{collection}/export', [CollectionController::class, 'export']);
+    Route::get('/collections/{collection}/documentation', [CollectionController::class, 'documentation']);
+    Route::post('/collections/{collection}/fork', [CollectionController::class, 'fork']);
+    Route::post('/collections/{collection}/duplicate', [CollectionController::class, 'duplicate']);
     Route::post('/collections/import', [CollectionController::class, 'import']);
     Route::post('/collections/{collection}/folders', [FolderController::class, 'store']);
     Route::post('/collections/{collection}/requests', [RequestController::class, 'store']);
@@ -41,6 +59,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('requests', RequestController::class)
         ->parameters(['requests' => 'apiRequest']);
     Route::post('/requests/{apiRequest}/duplicate', [RequestController::class, 'duplicate']);
+    Route::patch('/requests/{apiRequest}/move', [RequestController::class, 'move']);
+    Route::post('/requests/{apiRequest}/examples', [RequestController::class, 'storeExample']);
+    Route::delete('/requests/{apiRequest}/examples/{index}', [RequestController::class, 'destroyExample']);
+
+    Route::get('/settings/me', [UserSettingController::class, 'show']);
+    Route::patch('/settings/me', [UserSettingController::class, 'update']);
 
     Route::apiResource('environments', EnvironmentController::class);
     Route::post('/environments/{environment}/activate', [EnvironmentController::class, 'activate']);

@@ -40,6 +40,8 @@ class OpenApiImporter
             $collection = Collection::create([
                 'workspace_id' => $workspace->id,
                 'user_id' => $user->id,
+                'created_by' => $user->id,
+                'updated_by' => $user->id,
                 'name' => $spec['info']['title'],
                 'description' => $spec['info']['description'] ?? null,
                 'variables' => $variables,
@@ -68,6 +70,8 @@ class OpenApiImporter
                         'collection_id' => $collection->id,
                         'folder_id' => $folder?->id,
                         'user_id' => $user->id,
+                        'created_by' => $user->id,
+                        'updated_by' => $user->id,
                         'sort_order' => $sortOrder++,
                     ]);
                 }

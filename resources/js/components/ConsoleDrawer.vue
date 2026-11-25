@@ -3,8 +3,8 @@
         <div class="flex items-center justify-between border-b pm-border px-4 py-2">
             <span class="text-xs font-semibold pm-text">Console</span>
             <div class="flex gap-2">
-                <button type="button" @click="$emit('clear')" class="rounded px-2 py-0.5 text-xs pm-muted hover:pm-text">Clear</button>
-                <button type="button" @click="$emit('close')" class="rounded px-2 py-0.5 text-xs pm-muted hover:pm-text">✕</button>
+                <button type="button" @click="$emit('clear')" class="pm-btn pm-btn-ghost pm-btn-sm">Clear</button>
+                <button type="button" @click="$emit('close')" class="pm-icon-btn" title="Close console" aria-label="Close console">✕</button>
             </div>
         </div>
         <div class="min-h-0 flex-1 overflow-y-auto px-4 py-2 font-mono text-xs">

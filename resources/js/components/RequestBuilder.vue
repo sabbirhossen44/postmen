@@ -5,11 +5,11 @@
                 v-model="request.name"
                 type="text"
                 placeholder="Untitled Request"
-                class="w-56 rounded border pm-input px-2 py-2 text-sm font-medium outline-none focus:border-[#FF6C37]"
+                class="pm-field w-56 font-medium"
             >
             <select
                 v-model="request.collection_id"
-                class="max-w-52 rounded border pm-input px-2 py-2 text-sm outline-none"
+                class="pm-field max-w-52"
                 title="Collection to save into"
             >
                 <option :value="null">No collection</option>
@@ -17,13 +17,13 @@
             </select>
             <span v-if="request.id" class="rounded pm-active px-2 py-1 text-xs pm-text-2">Saved</span>
             <span v-else class="rounded pm-active px-2 py-1 text-xs pm-text-2">Unsaved</span>
-            <span v-if="isDirty" class="text-xs text-[#FF6C37]" title="Unsaved changes">● unsaved changes</span>
+            <span v-if="isDirty" class="text-xs pm-accent-text" title="Unsaved changes">● unsaved changes</span>
         </div>
 
         <div class="relative flex gap-2">
             <select
                 v-model="request.method"
-                class="rounded border pm-input px-2 py-2 font-mono text-sm font-bold outline-none"
+                class="pm-field pm-field-mono font-bold"
                 :class="methodClass(request.method)"
             >
                 <option v-for="m in methods" :key="m" :value="m">{{ m }}</option>
@@ -32,35 +32,44 @@
                 v-model="request.url"
                 type="text"
                 placeholder="https://api.example.com/users/{{id}} — use {{variable}} for environment values"
-                class="min-w-0 flex-1 rounded border pm-input px-3 py-2 font-mono text-sm outline-none focus:border-[#FF6C37]"
+                class="pm-field pm-field-mono min-w-0 flex-1"
                 @keyup.enter="$emit('send')"
                 @input="onUrlInput"
+                @keydown.down.prevent="urlAutocompleteIndex = Math.min(urlAutocompleteIndex + 1, autocomplete.length - 1)"
+                @keydown.up.prevent="urlAutocompleteIndex = Math.max(urlAutocompleteIndex - 1, 0)"
+                @keydown.tab.prevent="pickUrlSuggestion"
             >
             <button
                 type="button"
                 @click="$emit('send')"
                 :disabled="sending || !request.url.trim()"
-                class="pm-accent-bg rounded px-6 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                class="pm-btn pm-btn-primary pm-btn-lg"
+                title="Send request (Ctrl/Cmd+Enter)"
             >
+                <span v-if="sending" class="pm-spinner" aria-hidden="true"></span>
                 {{ sending ? 'Sending…' : 'Send' }}
             </button>
             <button
                 type="button"
                 @click="$emit('save')"
-                class="rounded border pm-border px-4 py-2 text-sm pm-text-2 hover:pm-active"
+                :disabled="saving || !canEdit"
+                class="pm-btn pm-btn-ghost pm-btn-lg"
+                :title="canEdit ? 'Save request (Ctrl/Cmd+S)' : 'Viewers cannot edit this workspace'"
             >
-                Save
+                <span v-if="saving" class="pm-spinner pm-spinner-dark" aria-hidden="true"></span>
+                {{ saving ? 'Saving…' : 'Save' }}
             </button>
-            <!-- {{variable}} autocomplete -->
+            <!-- {{variable}} autocomplete (shared util, same as the editors) -->
             <div
                 v-if="autocomplete.length > 0"
                 class="pm-panel absolute left-24 top-full z-40 mt-1 max-h-48 w-72 overflow-y-auto rounded border pm-border shadow-xl"
             >
                 <button
-                    v-for="v in autocomplete"
+                    v-for="(v, vi) in autocomplete"
                     :key="v.key"
                     type="button"
                     @click="insertVariable(v.key)"
+                    :class="vi === urlAutocompleteIndex ? 'pm-active' : ''"
                     class="block w-full px-3 py-1.5 text-left font-mono text-xs pm-text-2 pm-hover"
                 >
                     <span class="font-semibold pm-accent-text">{{ varLabel(v.key) }}</span>
@@ -86,8 +95,8 @@
                 :key="t.key"
                 type="button"
                 @click="activeTab = t.key"
-                :class="activeTab === t.key ? 'border-[#FF6C37] pm-text' : 'border-transparent pm-muted hover:pm-text'"
-                class="border-b-2 px-3 py-2 text-xs font-medium"
+                :class="activeTab === t.key ? 'pm-tab-active' : ''"
+                class="pm-tab"
             >
                 {{ t.label }}
                 <span v-if="t.count !== undefined && t.count > 0" class="ml-1 rounded pm-active px-1.5 py-0.5 text-[10px]">{{ t.count }}</span>
@@ -105,11 +114,11 @@
                             v-model="row.value"
                             type="text"
                             placeholder="Value"
-                            class="flex-1 rounded border pm-input px-2 py-1.5 text-sm outline-none focus:border-[#FF6C37]"
+                            class="pm-field flex-1"
                         >
                     </div>
                 </div>
-                <KeyValueEditor :rows="request.params" key-placeholder="Key" value-placeholder="Value" show-description />
+                <KeyValueEditor :rows="request.params" key-placeholder="Key" value-placeholder="Value" show-description :variables="previewVariables" />
                 <p class="mt-2 text-xs pm-faint">Enabled params are appended to the URL as a query string when sending. Use Bulk Edit for pasting many at once.</p>
             </div>
 
@@ -118,7 +127,7 @@
                 <label class="mb-1 block text-xs font-medium pm-muted">Type</label>
                 <select
                     v-model="request.auth_type"
-                    class="mb-3 rounded border pm-input px-2 py-2 text-sm outline-none"
+                    class="pm-field mb-3"
                 >
                     <option value="none">No Auth</option>
                     <option value="inherit">Inherit auth from parent</option>
@@ -137,7 +146,7 @@
                         v-model="request.auth.token"
                         type="text"
                         placeholder="Token ({{token}} works too)"
-                        class="w-full max-w-md rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]"
+                        class="pm-field w-full max-w-md"
                     >
                 </div>
                 <div v-if="request.auth_type === 'basic'" class="flex max-w-md gap-2">
@@ -145,13 +154,13 @@
                         v-model="request.auth.username"
                         type="text"
                         placeholder="Username"
-                        class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]"
+                        class="pm-field min-w-0 flex-1"
                     >
                     <input
                         v-model="request.auth.password"
                         type="password"
                         placeholder="Password"
-                        class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]"
+                        class="pm-field min-w-0 flex-1"
                     >
                 </div>
                 <div v-if="request.auth_type === 'digest'" class="flex max-w-md gap-2">
@@ -159,20 +168,20 @@
                         v-model="request.auth.username"
                         type="text"
                         placeholder="Username"
-                        class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]"
+                        class="pm-field min-w-0 flex-1"
                     >
                     <input
                         v-model="request.auth.password"
                         type="password"
                         placeholder="Password"
-                        class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]"
+                        class="pm-field min-w-0 flex-1"
                     >
                 </div>
                 <div v-if="request.auth_type === 'oauth2'" class="max-w-xl">
                     <div class="mb-2 flex flex-wrap gap-2">
                         <label class="flex-1">
                             <span class="mb-1 block text-xs font-medium pm-muted">Grant Type</span>
-                            <select v-model="request.auth.grant_type" class="w-full rounded border pm-input px-2 py-2 text-sm outline-none">
+                            <select v-model="request.auth.grant_type" class="pm-field w-full">
                                 <option value="client_credentials">Client Credentials</option>
                                 <option value="password">Password</option>
                                 <option value="authorization_code">Authorization Code</option>
@@ -181,28 +190,28 @@
                         </label>
                         <label class="flex-1">
                             <span class="mb-1 block text-xs font-medium pm-muted">Access Token URL</span>
-                            <input v-model="request.auth.token_url" type="text" placeholder="https://example.com/oauth/token" class="w-full rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]">
+                            <input v-model="request.auth.token_url" type="text" placeholder="https://example.com/oauth/token" class="pm-field w-full">
                         </label>
                     </div>
                     <div class="mb-2 flex flex-wrap gap-2">
-                        <input v-model="request.auth.client_id" type="text" placeholder="Client ID" class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]">
-                        <input v-model="request.auth.client_secret" type="password" placeholder="Client Secret" class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]">
+                        <input v-model="request.auth.client_id" type="text" placeholder="Client ID" class="pm-field min-w-0 flex-1">
+                        <input v-model="request.auth.client_secret" type="password" placeholder="Client Secret" class="pm-field min-w-0 flex-1">
                     </div>
                     <div class="mb-2 flex flex-wrap gap-2">
-                        <input v-model="request.auth.scope" type="text" placeholder="Scope (space separated)" class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]">
+                        <input v-model="request.auth.scope" type="text" placeholder="Scope (space separated)" class="pm-field min-w-0 flex-1">
                         <input
                             v-if="request.auth.grant_type === 'password'"
                             v-model="request.auth.username"
                             type="text"
                             placeholder="Username"
-                            class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]"
+                            class="pm-field min-w-0 flex-1"
                         >
                         <input
                             v-if="request.auth.grant_type === 'password'"
                             v-model="request.auth.password"
                             type="password"
                             placeholder="Password"
-                            class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]"
+                            class="pm-field min-w-0 flex-1"
                         >
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
@@ -210,7 +219,7 @@
                             type="button"
                             @click="fetchOAuthToken"
                             :disabled="oauthLoading || !request.auth.token_url"
-                            class="rounded border pm-border px-3 py-1.5 text-xs pm-text-2 hover:pm-active disabled:opacity-50"
+                            class="pm-btn pm-btn-ghost pm-btn-sm"
                         >
                             {{ oauthLoading ? 'Requesting…' : 'Get New Access Token' }}
                         </button>
@@ -223,12 +232,12 @@
                 </div>
                 <div v-if="request.auth_type === 'aws'" class="max-w-xl">
                     <div class="mb-2 flex flex-wrap gap-2">
-                        <input v-model="request.auth.access_key" type="text" placeholder="Access Key" class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]">
-                        <input v-model="request.auth.secret_key" type="password" placeholder="Secret Key" class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]">
+                        <input v-model="request.auth.access_key" type="text" placeholder="Access Key" class="pm-field min-w-0 flex-1">
+                        <input v-model="request.auth.secret_key" type="password" placeholder="Secret Key" class="pm-field min-w-0 flex-1">
                     </div>
                     <div class="flex flex-wrap gap-2">
-                        <input v-model="request.auth.region" type="text" placeholder="AWS Region (e.g. eu-west-1)" class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]">
-                        <input v-model="request.auth.service" type="text" placeholder="Service (e.g. s3)" class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]">
+                        <input v-model="request.auth.region" type="text" placeholder="AWS Region (e.g. eu-west-1)" class="pm-field min-w-0 flex-1">
+                        <input v-model="request.auth.service" type="text" placeholder="Service (e.g. s3)" class="pm-field min-w-0 flex-1">
                     </div>
                 </div>
                 <div v-if="request.auth_type === 'api_key'" class="flex max-w-xl flex-wrap gap-2">
@@ -236,17 +245,17 @@
                         v-model="request.auth.key"
                         type="text"
                         placeholder="Key"
-                        class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]"
+                        class="pm-field min-w-0 flex-1"
                     >
                     <input
                         v-model="request.auth.value"
                         type="text"
                         placeholder="Value"
-                        class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]"
+                        class="pm-field min-w-0 flex-1"
                     >
                     <select
                         v-model="request.auth.in"
-                        class="rounded border pm-input px-2 py-2 text-sm outline-none"
+                        class="pm-field"
                     >
                         <option value="header">Add to Header</option>
                         <option value="query">Add to Query Params</option>
@@ -256,7 +265,7 @@
 
             <!-- Headers -->
             <div v-show="activeTab === 'headers'">
-                <KeyValueEditor :rows="request.headers" key-placeholder="Key" value-placeholder="Value" show-description />
+                <KeyValueEditor :rows="request.headers" key-placeholder="Key" value-placeholder="Value" show-description :variables="previewVariables" />
                 <button type="button" @click="showAutoHeaders = !showAutoHeaders" class="mt-3 text-xs pm-muted hover:pm-text">
                     {{ showAutoHeaders ? '▾ Hide auto headers' : '▸ Show auto headers' }} (added by the client at send time)
                 </button>
@@ -269,53 +278,77 @@
             <div v-show="activeTab === 'body'">
                 <div class="mb-3 flex flex-wrap gap-4 text-sm pm-text-2">
                     <label class="flex cursor-pointer items-center gap-1.5">
-                        <input type="radio" value="none" v-model="request.body_type" class="accent-[#FF6C37]"> none
+                        <input type="radio" value="none" v-model="request.body_type"> none
                     </label>
                     <label class="flex cursor-pointer items-center gap-1.5">
-                        <input type="radio" value="form-data" v-model="request.body_type" class="accent-[#FF6C37]"> form-data
+                        <input type="radio" value="form-data" v-model="request.body_type"> form-data
                     </label>
                     <label class="flex cursor-pointer items-center gap-1.5">
-                        <input type="radio" value="urlencoded" v-model="request.body_type" class="accent-[#FF6C37]"> x-www-form-urlencoded
+                        <input type="radio" value="urlencoded" v-model="request.body_type"> x-www-form-urlencoded
                     </label>
                     <label class="flex cursor-pointer items-center gap-1.5">
-                        <input type="radio" value="raw" v-model="request.body_type" class="accent-[#FF6C37]"> raw
+                        <input type="radio" value="raw" v-model="request.body_type"> raw
                     </label>
                     <label class="flex cursor-pointer items-center gap-1.5">
-                        <input type="radio" value="binary" v-model="request.body_type" class="accent-[#FF6C37]"> binary
+                        <input type="radio" value="binary" v-model="request.body_type"> binary
                     </label>
                     <label class="flex cursor-pointer items-center gap-1.5">
-                        <input type="radio" value="graphql" v-model="request.body_type" class="accent-[#FF6C37]"> GraphQL
+                        <input type="radio" value="graphql" v-model="request.body_type"> GraphQL
                     </label>
                 </div>
                 <div v-if="request.body_type === 'form-data'">
-                    <KeyValueEditor :rows="request.body.formdata" key-placeholder="Key" value-placeholder="Value" allow-file />
+                    <KeyValueEditor :rows="request.body.formdata" key-placeholder="Key" value-placeholder="Value" allow-file :variables="previewVariables" />
                     <p class="mt-2 text-xs pm-faint">File rows are uploaded to /media and sent as real file bytes — never as a stored path string.</p>
                 </div>
                 <div v-if="request.body_type === 'urlencoded'">
-                    <KeyValueEditor :rows="request.body.urlencoded" key-placeholder="Key" value-placeholder="Value" />
+                    <KeyValueEditor :rows="request.body.urlencoded" key-placeholder="Key" value-placeholder="Value" :variables="previewVariables" />
                 </div>
                 <div v-if="request.body_type === 'raw'">
                     <div class="mb-2 flex items-center gap-2">
-                        <select v-model="request.body.raw_language" class="rounded border pm-input px-2 py-1.5 text-xs outline-none">
+                        <select v-model="request.body.raw_language" class="pm-field pm-field-xs">
                             <option value="json">JSON</option>
                             <option value="text">Text</option>
                             <option value="javascript">JavaScript</option>
                             <option value="html">HTML</option>
                             <option value="xml">XML</option>
                         </select>
-                        <button type="button" @click="beautifyRaw" class="rounded border pm-border px-2 py-1.5 text-xs pm-text-2 hover:pm-active">Beautify</button>
-                        <span class="text-xs pm-faint">Content-Type is set automatically for JSON.</span>
+                        <button type="button" @click="beautifyRaw" class="pm-btn pm-btn-ghost pm-btn-sm">Beautify</button>
+                        <span class="text-xs pm-faint">Content-Type is set automatically for JSON. Type &#123;&#123; to insert a variable.</span>
                     </div>
-                    <textarea
-                        v-model="request.body.raw"
-                        rows="6"
-                        spellcheck="false"
-                        placeholder='{"key": "value"}'
-                        class="w-full rounded border pm-input px-3 py-2 font-mono text-sm outline-none focus:border-[#FF6C37]"
-                    ></textarea>
+                    <div class="relative">
+                        <textarea
+                            v-model="request.body.raw"
+                            rows="6"
+                            spellcheck="false"
+                            placeholder='{"key": "value"}'
+                            class="w-full rounded border pm-input px-3 py-2 font-mono text-sm outline-none focus:border-[#FF6C37]"
+                            @input="onRawInput($event)"
+                            @blur="closeRawAutocompleteSoon"
+                            @keydown.down.prevent="rawAutocompleteIndex = Math.min(rawAutocompleteIndex + 1, rawSuggestions.length - 1)"
+                            @keydown.up.prevent="rawAutocompleteIndex = Math.max(rawAutocompleteIndex - 1, 0)"
+                            @keydown.tab.prevent="pickRawSuggestion"
+                            @keydown.esc="rawSuggestions = []"
+                        ></textarea>
+                        <div
+                            v-if="rawSuggestions.length > 0"
+                            class="pm-panel absolute left-0 top-full z-40 mt-1 max-h-48 w-72 overflow-y-auto rounded border pm-border shadow-xl"
+                        >
+                            <button
+                                v-for="(v, vi) in rawSuggestions"
+                                :key="v.key"
+                                type="button"
+                                @mousedown.prevent="insertRawVariable(v.key)"
+                                :class="vi === rawAutocompleteIndex ? 'pm-active' : ''"
+                                class="block w-full px-3 py-1.5 text-left font-mono text-xs pm-text-2 pm-hover"
+                            >
+                                <span class="font-semibold pm-accent-text">{{ varLabel(v.key) }}</span>
+                                <span class="pm-faint"> = {{ v.value }}</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
                 <div v-if="request.body_type === 'binary'">
-                    <label class="flex w-full max-w-md cursor-pointer items-center gap-2 rounded border pm-input px-3 py-2 text-sm pm-muted hover:border-[#FF6C37]">
+                    <label class="pm-field flex w-full max-w-md cursor-pointer items-center gap-2 text-sm pm-muted">
                         <span class="truncate">{{ binaryName || 'Choose a file…' }}</span>
                         <input type="file" class="hidden" @change="onBinaryFile">
                     </label>
@@ -328,7 +361,7 @@
                         rows="5"
                         spellcheck="false"
                         placeholder="query { users { id name } }"
-                        class="w-full rounded border pm-input px-3 py-2 font-mono text-sm outline-none focus:border-[#FF6C37]"
+                        class="pm-field pm-field-mono w-full"
                     ></textarea>
                     <label class="mb-1 mt-2 block text-xs font-medium pm-muted">Variables (JSON)</label>
                     <textarea
@@ -336,7 +369,7 @@
                         rows="3"
                         spellcheck="false"
                         placeholder='{"id": 1}'
-                        class="w-full rounded border pm-input px-3 py-2 font-mono text-sm outline-none focus:border-[#FF6C37]"
+                        class="pm-field pm-field-mono w-full"
                     ></textarea>
                     <p class="mt-2 text-xs pm-faint">Sent as a JSON envelope {"{ query, variables }"} with Content-Type: application/json.</p>
                 </div>
@@ -348,11 +381,11 @@
                 <div class="mb-2 flex flex-wrap items-center gap-2">
                     <label class="text-xs font-medium pm-muted">Pre-request Script</label>
                     <span class="flex-1"></span>
-                    <select v-model="preSnippet" class="rounded border pm-input px-2 py-1 text-xs outline-none">
+                    <select v-model="preSnippet" class="pm-field pm-field-xs">
                         <option value="">Insert snippet…</option>
                         <option v-for="s in preSnippets" :key="s.key" :value="s.key">{{ s.label }}</option>
                     </select>
-                    <button type="button" @click="insertSnippet('pre_request')" :disabled="!preSnippet" class="rounded border pm-border px-2 py-1 text-xs pm-text-2 hover:pm-active disabled:opacity-50">Insert</button>
+                    <button type="button" @click="insertSnippet('pre_request')" :disabled="!preSnippet" class="pm-btn pm-btn-ghost pm-btn-sm">Insert</button>
                 </div>
                 <div class="mb-3 flex overflow-hidden rounded border pm-border">
                     <div ref="preGutter" class="shrink-0 select-none overflow-hidden px-2 py-2 text-right font-mono text-xs leading-5 pm-faint pm-code-bg">
@@ -363,18 +396,18 @@
                         rows="6"
                         spellcheck="false"
                         placeholder="// pm.environment.set('token', 'abc');"
-                        class="min-w-0 flex-1 px-3 py-2 font-mono text-sm leading-5 outline-none pm-input"
+                        class="pm-field pm-field-mono pm-field-flush min-w-0 flex-1 leading-5"
                         @scroll="syncGutter('preGutter', $event)"
                     ></textarea>
                 </div>
                 <div class="mb-2 flex flex-wrap items-center gap-2">
                     <label class="text-xs font-medium pm-muted">Post-response / Tests</label>
                     <span class="flex-1"></span>
-                    <select v-model="testSnippet" class="rounded border pm-input px-2 py-1 text-xs outline-none">
+                    <select v-model="testSnippet" class="pm-field pm-field-xs">
                         <option value="">Insert snippet…</option>
                         <option v-for="s in testSnippets" :key="s.key" :value="s.key">{{ s.label }}</option>
                     </select>
-                    <button type="button" @click="insertSnippet('tests')" :disabled="!testSnippet" class="rounded border pm-border px-2 py-1 text-xs pm-text-2 hover:pm-active disabled:opacity-50">Insert</button>
+                    <button type="button" @click="insertSnippet('tests')" :disabled="!testSnippet" class="pm-btn pm-btn-ghost pm-btn-sm">Insert</button>
                 </div>
                 <div class="flex overflow-hidden rounded border pm-border">
                     <div ref="testGutter" class="shrink-0 select-none overflow-hidden px-2 py-2 text-right font-mono text-xs leading-5 pm-faint pm-code-bg">
@@ -385,7 +418,7 @@
                         rows="6"
                         spellcheck="false"
                         placeholder="// pm.test('Status is 200', () => pm.response.to.have.status(200));"
-                        class="min-w-0 flex-1 px-3 py-2 font-mono text-sm leading-5 outline-none pm-input"
+                        class="pm-field pm-field-mono pm-field-flush min-w-0 flex-1 leading-5"
                         @scroll="syncGutter('testGutter', $event)"
                     ></textarea>
                 </div>
@@ -396,29 +429,42 @@
                 <CodeSnippet :request="request" />
             </div>
 
+            <!-- Description -->
+            <div v-show="activeTab === 'description'">
+                <p class="mb-2 text-xs pm-faint">Markdown — shown in the collection documentation view.</p>
+                <textarea
+                    v-model="request.description"
+                    rows="4"
+                    spellcheck="false"
+                    placeholder="# What does this request do?&#10;Describe the endpoint, its parameters and what it returns."
+                    class="w-full rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]"
+                ></textarea>
+                <div v-if="request.description" class="doc-markdown mt-3 rounded border pm-border pm-surface px-3 py-2 text-sm pm-text-2" v-html="renderedDescription"></div>
+            </div>
+
             <!-- Settings -->
             <div v-show="activeTab === 'settings'">
                 <div class="flex max-w-md flex-col gap-3 text-sm pm-text-2">
                     <label class="flex items-center justify-between gap-4">
                         Timeout (seconds)
-                        <input v-model.number="request.settings.timeout" type="number" min="1" max="300" class="w-24 rounded border pm-input px-2 py-1.5 text-sm outline-none">
+                        <input v-model.number="request.settings.timeout" type="number" min="1" max="300" class="pm-field w-24">
                     </label>
                     <label class="flex items-center justify-between gap-4">
                         Max redirects
-                        <input v-model.number="request.settings.max_redirects" type="number" min="0" max="10" class="w-24 rounded border pm-input px-2 py-1.5 text-sm outline-none">
+                        <input v-model.number="request.settings.max_redirects" type="number" min="0" max="10" class="pm-field w-24">
                     </label>
                     <label class="flex cursor-pointer items-center gap-2">
-                        <input v-model="request.settings.follow_redirects" type="checkbox" class="accent-[#FF6C37]"> Follow redirects
+                        <input v-model="request.settings.follow_redirects" type="checkbox"> Follow redirects
                     </label>
                     <label class="flex cursor-pointer items-center gap-2">
-                        <input v-model="request.settings.verify_ssl" type="checkbox" class="accent-[#FF6C37]"> Verify SSL certificates
+                        <input v-model="request.settings.verify_ssl" type="checkbox"> Verify SSL certificates
                     </label>
                     <label class="flex cursor-pointer items-center gap-2">
-                        <input v-model="request.settings.send_cookies" type="checkbox" class="accent-[#FF6C37]"> Send cookies (use the stored cookie jar)
+                        <input v-model="request.settings.send_cookies" type="checkbox"> Send cookies (use the stored cookie jar)
                     </label>
                     <label class="block">
                         <span class="mb-1 block text-xs font-medium pm-muted">Description</span>
-                        <textarea v-model="request.description" rows="2" placeholder="What does this request do?" class="w-full rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]"></textarea>
+                        <textarea v-model="request.description" rows="2" placeholder="What does this request do?" class="pm-field w-full"></textarea>
                     </label>
                 </div>
             </div>
@@ -427,8 +473,8 @@
 </template>
 
 <script>
-import { store, variablesForPreview } from '../store.js'
-import { resolveVariables, variableSegments, pathVariables } from '../utils/variables.js'
+import { store, variablesForPreview, canEditActiveWorkspace } from '../store.js'
+import { resolveVariables, variableSegments, pathVariables, variableSuggestions, insertVariableAt, renderMarkdown } from '../utils/variables.js'
 import { methodClass, METHODS } from '../utils/methods.js'
 import { api, errMessage } from '../api.js'
 import KeyValueEditor from './KeyValueEditor.vue'
@@ -457,11 +503,17 @@ export default {
     props: {
         request: { type: Object, required: true },
         sending: { type: Boolean, default: false },
+        saving: { type: Boolean, default: false },
         saveMessage: { type: String, default: '' },
         saveMessageIsError: { type: Boolean, default: false },
         isDirty: { type: Boolean, default: false },
     },
     emits: ['send', 'save'],
+    computed: {
+        canEdit() {
+            return canEditActiveWorkspace()
+        },
+    },
     data() {
         return {
             store,
@@ -475,6 +527,10 @@ export default {
             testSnippet: '',
             preSnippets: PRE_SNIPPETS,
             testSnippets: TEST_SNIPPETS,
+            urlAutocompleteIndex: 0,
+            rawSuggestions: [],
+            rawAutocompleteIndex: 0,
+            rawCaret: 0,
         }
     },
     computed: {
@@ -484,10 +540,14 @@ export default {
                 { key: 'auth', label: 'Authorization' },
                 { key: 'headers', label: 'Headers', count: this.request.headers.filter((r) => r.key).length },
                 { key: 'body', label: 'Body' },
+                { key: 'description', label: 'Description' },
                 { key: 'scripts', label: 'Scripts' },
                 { key: 'code', label: 'Code' },
                 { key: 'settings', label: 'Settings' },
             ]
+        },
+        renderedDescription() {
+            return renderMarkdown(this.request.description || '')
         },
         previewVariables() {
             return variablesForPreview(this.request.collection_id)
@@ -517,10 +577,8 @@ export default {
             return ''
         },
         autocomplete() {
-            const m = (this.request.url || '').match(/\{\{\s*([\w.\-]*)$/)
-            if (!m) return []
-            const prefix = m[1].toLowerCase()
-            return this.previewVariables.filter((v) => v.key.toLowerCase().startsWith(prefix)).slice(0, 8)
+            const { matches } = variableSuggestions(this.request.url || '', (this.request.url || '').length, this.previewVariables)
+            return matches
         },
         autoHeaders() {
             const headers = []
@@ -550,10 +608,12 @@ export default {
     },
     methods: {
         methodClass,
+        renderMarkdown,
         varLabel(key) {
             return '{{' + key + '}}'
         },
-        onUrlInput() {
+        onUrlInput(event) {
+            this.urlAutocompleteIndex = 0
             // Keep path-variable rows in sync with :name segments in the URL.
             const found = pathVariables(this.request.url)
             found.forEach((pv) => {
@@ -568,7 +628,31 @@ export default {
             }
         },
         insertVariable(key) {
-            this.request.url = (this.request.url || '').replace(/\{\{\s*[\w.\-]*$/, '{{' + key + '}}')
+            const { text } = insertVariableAt(this.request.url || '', (this.request.url || '').length, key)
+            this.request.url = text
+        },
+        pickUrlSuggestion() {
+            const v = this.autocomplete[this.urlAutocompleteIndex]
+            if (v) this.insertVariable(v.key)
+        },
+        // {{var}} autocomplete in the raw body editor.
+        onRawInput(event) {
+            this.rawCaret = event.target.selectionStart
+            this.rawAutocompleteIndex = 0
+            const { matches } = variableSuggestions(this.request.body.raw || '', this.rawCaret, this.previewVariables)
+            this.rawSuggestions = matches
+        },
+        closeRawAutocompleteSoon() {
+            setTimeout(() => { this.rawSuggestions = [] }, 150)
+        },
+        pickRawSuggestion() {
+            const v = this.rawSuggestions[this.rawAutocompleteIndex]
+            if (v) this.insertRawVariable(v.key)
+        },
+        insertRawVariable(key) {
+            const { text } = insertVariableAt(this.request.body.raw || '', this.rawCaret, key)
+            this.request.body.raw = text
+            this.rawSuggestions = []
         },
         beautifyRaw() {
             const lang = this.request.body.raw_language
@@ -650,11 +734,7 @@ export default {
                     this.oauthMessage = 'No token in the response.'
                 }
             } catch (e) {
-                if (api.isMissingEndpoint(e)) {
-                    this.authNote = 'The OAuth token endpoint (POST /api/requests/{id}/oauth/token) is not available yet.'
-                } else {
-                    this.oauthMessage = 'Token request failed: ' + errMessage(e)
-                }
+                this.oauthMessage = 'Token request failed: ' + errMessage(e)
             } finally {
                 this.oauthLoading = false
             }

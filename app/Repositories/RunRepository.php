@@ -3,6 +3,7 @@
 namespace App\Repositories;
 
 use App\Models\Run;
+use App\Services\WorkspaceAccess;
 use Arafat\LaravelRepository\Repository;
 
 class RunRepository extends Repository
@@ -14,7 +15,11 @@ class RunRepository extends Repository
 
     public static function forUser(int $userId, ?int $collectionId = null)
     {
-        $query = self::query()->where('user_id', $userId)->latest();
+        $query = self::query()
+            ->where(function ($q) use ($userId) {
+                $q->where('user_id', $userId)
+                    ->orWhereIn('workspace_id', WorkspaceAccess::accessibleWorkspaceIds($userId));
+            })->latest();
 
         if ($collectionId !== null) {
             $query->where('collection_id', $collectionId);
@@ -25,7 +30,11 @@ class RunRepository extends Repository
 
     public static function findForUser(int $id, int $userId): ?Run
     {
-        return self::query()->where('id', $id)->where('user_id', $userId)->first();
+        return self::query()->where('id', $id)
+            ->where(function ($q) use ($userId) {
+                $q->where('user_id', $userId)
+                    ->orWhereIn('workspace_id', WorkspaceAccess::accessibleWorkspaceIds($userId));
+            })->first();
     }
 
     public static function delete($primaryKey)

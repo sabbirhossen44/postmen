@@ -27,6 +27,8 @@ class CollectionImporter
         $collection = Collection::create([
             'workspace_id' => $workspace->id,
             'user_id' => $user->id,
+            'created_by' => $user->id,
+            'updated_by' => $user->id,
             'name' => $info['name'],
             'description' => $info['description'] ?? null,
             'variables' => $this->parseVariables($collectionJson['variable'] ?? []),
@@ -77,6 +79,8 @@ class CollectionImporter
             'collection_id' => $collection->id,
             'folder_id' => $parent?->id,
             'user_id' => $user->id,
+            'created_by' => $user->id,
+            'updated_by' => $user->id,
             'name' => $item['name'] ?? 'Untitled Request',
             'method' => in_array($method, ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'], true) ? $method : 'GET',
             'url' => $url['raw'],

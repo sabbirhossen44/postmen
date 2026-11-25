@@ -6,9 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreRunRequest;
 use App\Models\Collection;
 use App\Models\Run;
+use App\Repositories\CollectionRepository;
 use App\Repositories\EnvironmentRepository;
 use App\Repositories\RunRepository;
+use App\Services\ActivityService;
 use App\Services\CollectionRunner;
+use App\Services\WorkspaceAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Throwable;
@@ -24,7 +27,10 @@ class RunController extends Controller
     public function store(StoreRunRequest $request, Collection $collection, CollectionRunner $runner): JsonResponse
     {
         $user = $request->user();
-        abort_unless($collection->user_id === $user->id, 404, 'Collection not found.');
+        // Any role may run a collection in a workspace they can see
+        // (running is a send, not an edit).
+        $collection = CollectionRepository::findForUser($collection->id, $user->id);
+        abort_unless($collection, 404, 'Collection not found.');
 
         $data = $request->validated();
 
@@ -36,8 +42,8 @@ class RunController extends Controller
 
         $environment = null;
         if (! empty($data['environment_id'])) {
-            $environment = EnvironmentRepository::findOrFail($data['environment_id']);
-            abort_unless($environment->user_id === $user->id, 403, 'You do not own this environment.');
+            $environment = EnvironmentRepository::findForUser((int) $data['environment_id'], $user->id);
+            abort_unless($environment, 404, 'Environment not found.');
             abort_unless(
                 $environment->workspace_id === $collection->workspace_id,
                 422,
@@ -71,6 +77,11 @@ class RunController extends Controller
             ], 500);
         }
 
+        ActivityService::log(
+            $collection->workspace, $user, 'run', $run,
+            "Ran collection {$collection->name}."
+        );
+
         return response()->json([
             'success' => true,
             'message' => 'Run finished.',
@@ -98,7 +109,7 @@ class RunController extends Controller
     /** GET /runs/{run} — one run with its per-request results. */
     public function show(Run $run): JsonResponse
     {
-        abort_unless($run->user_id === auth()->id(), 404, 'Run not found.');
+        abort_unless(RunRepository::findForUser($run->id, auth()->id()), 404, 'Run not found.');
 
         return response()->json([
             'success' => true,

@@ -14,6 +14,8 @@ class Environment extends Model
     protected $fillable = [
         'workspace_id',
         'user_id',
+        'created_by',
+        'updated_by',
         'name',
         'is_active',
         'variables',

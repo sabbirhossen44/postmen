@@ -4,6 +4,7 @@ namespace App\Repositories;
 
 use Arafat\LaravelRepository\Repository;
 use App\Models\Environment;
+use App\Services\WorkspaceAccess;
 
 class EnvironmentRepository extends Repository
 {
@@ -15,6 +16,13 @@ class EnvironmentRepository extends Repository
     public static function forWorkspace(int $workspaceId)
     {
         return self::query()->where('workspace_id', $workspaceId)->orderBy('name')->get();
+    }
+
+    /** One environment whose workspace the user owns or is a member of. */
+    public static function findForUser(int $id, int $userId): ?Environment
+    {
+        return self::query()->where('id', $id)
+            ->whereIn('workspace_id', WorkspaceAccess::accessibleWorkspaceIds($userId))->first();
     }
 
     public static function activeForWorkspace(int $workspaceId): ?Environment

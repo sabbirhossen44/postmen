@@ -16,6 +16,7 @@ class StoreWorkspaceRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:255', Rule::unique('workspaces')->where('user_id', $this->user()->id)],
+            'type' => ['nullable', 'string', Rule::in(\App\Models\Workspace::TYPES)],
             'description' => ['nullable', 'string'],
             'media_id' => ['nullable', 'integer', 'exists:media,id'],
         ];

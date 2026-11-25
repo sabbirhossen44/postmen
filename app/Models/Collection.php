@@ -14,6 +14,8 @@ class Collection extends Model
     protected $fillable = [
         'workspace_id',
         'user_id',
+        'created_by',
+        'updated_by',
         'name',
         'description',
         'media_id',

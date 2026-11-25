@@ -1,7 +1,7 @@
 <template>
     <div>
         <div class="mb-1 flex justify-end">
-            <button type="button" @click="bulk = !bulk" class="rounded px-2 py-0.5 text-xs pm-muted hover:pm-text">
+            <button type="button" @click="bulk = !bulk" class="pm-btn pm-btn-ghost pm-btn-sm">
                 {{ bulk ? 'Key-Value Edit' : 'Bulk Edit' }}
             </button>
         </div>
@@ -12,7 +12,7 @@
                 rows="6"
                 spellcheck="false"
                 placeholder="key: value&#10;one per line — disabled rows start with #"
-                class="w-full rounded border pm-input px-2 py-1.5 font-mono text-sm outline-none focus:border-[#FF6C37]"
+                class="pm-field pm-field-mono w-full"
             ></textarea>
         </div>
         <div v-else>
@@ -24,39 +24,64 @@
             <input
                 type="checkbox"
                 v-model="row.enabled"
-                class="h-4 w-4 shrink-0 accent-[#FF6C37]"
+                class="h-4 w-4 shrink-0"
                 title="Enable this row"
             >
             <input
                 v-model="row.key"
                 type="text"
                 :placeholder="keyPlaceholder"
-                class="w-1/3 rounded border pm-input px-2 py-1.5 text-sm pm-text-2 placeholder-neutral-500 outline-none focus:border-[#FF6C37]"
+                class="pm-field w-1/3"
             >
             <template v-if="allowFile && row.type === 'file'">
-                <label class="flex w-1/3 cursor-pointer items-center gap-2 rounded border pm-input px-2 py-1.5 text-sm pm-muted hover:border-[#FF6C37]">
+                <label class="pm-field flex w-1/3 cursor-pointer items-center gap-2 text-sm pm-muted">
                     <span class="truncate">{{ row.value || 'Choose a file…' }}</span>
                     <input type="file" class="hidden" @change="onFile(row, $event)">
                 </label>
                 <select
                     v-model="row.type"
-                    class="shrink-0 rounded border pm-input px-1 py-1.5 text-xs pm-text-2 outline-none"
+                    class="pm-field pm-field-xs shrink-0"
                 >
                     <option value="text">Text</option>
                     <option value="file">File</option>
                 </select>
             </template>
             <template v-else>
-                <input
-                    v-model="row.value"
-                    type="text"
-                    :placeholder="valuePlaceholder"
-                    class="flex-1 rounded border pm-input px-2 py-1.5 text-sm pm-text-2 placeholder-neutral-500 outline-none focus:border-[#FF6C37]"
-                >
+                <span class="relative min-w-0 flex-1">
+                    <input
+                        v-model="row.value"
+                        type="text"
+                        :placeholder="valuePlaceholder"
+                        class="pm-field w-full"
+                        @input="onValueInput(row, i, $event)"
+                        @focus="onValueInput(row, i, $event)"
+                        @blur="closeAutocompleteSoon"
+                        @keydown.down.prevent="autocompleteIndex = Math.min(autocompleteIndex + 1, suggestions.length - 1)"
+                        @keydown.up.prevent="autocompleteIndex = Math.max(autocompleteIndex - 1, 0)"
+                        @keydown.enter.prevent="pickSuggestion(row)"
+                        @keydown.esc="suggestions = []"
+                    >
+                    <span
+                        v-if="suggestions.length > 0 && activeRow === i"
+                        class="pm-panel absolute left-0 top-full z-40 mt-1 max-h-48 w-72 overflow-y-auto rounded border pm-border shadow-xl"
+                    >
+                        <button
+                            v-for="(v, vi) in suggestions"
+                            :key="v.key"
+                            type="button"
+                            @mousedown.prevent="insertSuggestion(row, v.key)"
+                            :class="vi === autocompleteIndex ? 'pm-active' : ''"
+                            class="block w-full px-3 py-1.5 text-left font-mono text-xs pm-text-2 pm-hover"
+                        >
+                            <span class="font-semibold pm-accent-text">{{ varLabel(v.key) }}</span>
+                            <span class="pm-faint"> = {{ v.value }}</span>
+                        </button>
+                    </span>
+                </span>
                 <select
                     v-if="allowFile"
                     v-model="row.type"
-                    class="shrink-0 rounded border pm-input px-1 py-1.5 text-xs pm-text-2 outline-none"
+                    class="pm-field pm-field-xs shrink-0"
                 >
                     <option value="text">Text</option>
                     <option value="file">File</option>
@@ -67,12 +92,12 @@
                 v-model="row.description"
                 type="text"
                 placeholder="Description"
-                class="w-1/4 rounded border pm-input px-2 py-1.5 text-sm pm-text-2 placeholder-neutral-500 outline-none focus:border-[#FF6C37]"
+                class="pm-field w-1/4"
             >
             <button
                 type="button"
                 @click="removeRow(i)"
-                class="shrink-0 rounded px-2 py-1 pm-faint hover:bg-neutral-700 hover:text-red-400"
+                class="pm-icon-btn pm-icon-btn-danger shrink-0"
                 title="Delete row"
             >
                 ✕
@@ -81,7 +106,7 @@
         <button
             type="button"
             @click="addRow"
-            class="mt-1 rounded px-2 py-1 text-sm pm-muted hover:bg-neutral-700 hover:pm-text-2"
+            class="pm-btn pm-btn-ghost pm-btn-sm mt-1"
         >
             + Add row
         </button>
@@ -90,6 +115,8 @@
 </template>
 
 <script>
+import { variableSuggestions, insertVariableAt } from '../utils/variables.js'
+
 export default {
     name: 'KeyValueEditor',
     props: {
@@ -98,9 +125,12 @@ export default {
         valuePlaceholder: { type: String, default: 'Value' },
         showDescription: { type: Boolean, default: false },
         allowFile: { type: Boolean, default: false },
+        // Variables in scope (environment + collection + globals) for
+        // {{var}} autocomplete in the value fields.
+        variables: { type: Array, default: () => [] },
     },
     data() {
-        return { bulk: false }
+        return { bulk: false, suggestions: [], activeRow: -1, autocompleteIndex: 0, autocompleteCaret: 0 }
     },
     computed: {
         // Bulk Edit view: one "key: value" line per row.
@@ -112,6 +142,30 @@ export default {
         },
     },
     methods: {
+        varLabel(key) {
+            return '{{' + key + '}}'
+        },
+        // {{var}} autocomplete in a value field: suggest while typing
+        // an open "{{prefix" at the caret.
+        onValueInput(row, i, event) {
+            this.activeRow = i
+            this.autocompleteIndex = 0
+            this.autocompleteCaret = event.target.selectionStart
+            const { matches } = variableSuggestions(row.value || '', this.autocompleteCaret, this.variables)
+            this.suggestions = matches
+        },
+        closeAutocompleteSoon() {
+            setTimeout(() => { this.suggestions = [] }, 150)
+        },
+        pickSuggestion(row) {
+            const v = this.suggestions[this.autocompleteIndex]
+            if (v) this.insertSuggestion(row, v.key)
+        },
+        insertSuggestion(row, key) {
+            const { text } = insertVariableAt(row.value || '', this.autocompleteCaret, key)
+            row.value = text
+            this.suggestions = []
+        },
         applyBulk(text) {
             const rows = text.split('\n').map((line) => {
                 const disabled = line.startsWith('#')

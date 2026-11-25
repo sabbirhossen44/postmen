@@ -4,6 +4,7 @@ namespace App\Repositories;
 
 use Arafat\LaravelRepository\Repository;
 use App\Models\Collection;
+use App\Services\WorkspaceAccess;
 
 class CollectionRepository extends Repository
 {
@@ -17,9 +18,11 @@ class CollectionRepository extends Repository
         return self::query()->where('workspace_id', $workspaceId)->orderBy('name')->get();
     }
 
+    /** One collection whose workspace the user owns or is a member of. */
     public static function findForUser(int $id, int $userId): ?Collection
     {
-        return self::query()->where('id', $id)->where('user_id', $userId)->first();
+        return self::query()->where('id', $id)
+            ->whereIn('workspace_id', WorkspaceAccess::accessibleWorkspaceIds($userId))->first();
     }
 
     public static function delete($primaryKey)

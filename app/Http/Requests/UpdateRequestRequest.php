@@ -48,6 +48,10 @@ class UpdateRequestRequest extends FormRequest
             'settings.send_cookies' => ['nullable', 'boolean'],
             'description' => ['nullable', 'string'],
             'sort_order' => ['nullable', 'integer'],
+            // Optimistic locking: the client sends the updated_at it last
+            // saw; the controller rejects the update with 409 when the
+            // stored row is newer.
+            'updated_at' => ['nullable', 'date'],
         ];
     }
 }

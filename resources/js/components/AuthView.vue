@@ -3,7 +3,7 @@
         <div class="w-full max-w-md rounded-lg border pm-border pm-panel p-6 shadow-xl">
             <div class="mb-6 text-center">
                 <div class="text-2xl font-bold pm-text">
-                    Postmen<span class="text-[#FF6C37]">.</span>
+                    Postmen<span class="pm-accent-text">.</span>
                 </div>
                 <p class="mt-1 text-sm pm-muted">Sign in to your workspace</p>
             </div>
@@ -12,16 +12,16 @@
                 <button
                     type="button"
                     @click="mode = 'login'"
-                    :class="mode === 'login' ? 'pm-accent-bg text-white' : 'pm-text-2 hover:pm-active'"
-                    class="flex-1 rounded-l px-3 py-2 text-sm font-medium"
+                    :class="mode === 'login' ? 'pm-btn-primary' : 'pm-text-2 hover:pm-active'"
+                    class="pm-btn pm-btn-seg-l flex-1"
                 >
                     Login
                 </button>
                 <button
                     type="button"
                     @click="mode = 'register'"
-                    :class="mode === 'register' ? 'pm-accent-bg text-white' : 'pm-text-2 hover:pm-active'"
-                    class="flex-1 rounded-r px-3 py-2 text-sm font-medium"
+                    :class="mode === 'register' ? 'pm-btn-primary' : 'pm-text-2 hover:pm-active'"
+                    class="pm-btn pm-btn-seg-r flex-1"
                 >
                     Register
                 </button>
@@ -35,7 +35,7 @@
                         type="text"
                         required
                         placeholder="Your name"
-                        class="w-full rounded border pm-input px-3 py-2 text-sm pm-text placeholder-neutral-500 outline-none focus:border-[#FF6C37]"
+                        class="pm-field w-full"
                     >
                 </div>
                 <div class="mb-3">
@@ -45,7 +45,7 @@
                         type="email"
                         required
                         placeholder="you@example.com"
-                        class="w-full rounded border pm-input px-3 py-2 text-sm pm-text placeholder-neutral-500 outline-none focus:border-[#FF6C37]"
+                        class="pm-field w-full"
                     >
                 </div>
                 <div class="mb-3">
@@ -55,7 +55,7 @@
                         type="password"
                         required
                         placeholder="Password"
-                        class="w-full rounded border pm-input px-3 py-2 text-sm pm-text placeholder-neutral-500 outline-none focus:border-[#FF6C37]"
+                        class="pm-field w-full"
                     >
                 </div>
                 <div v-if="mode === 'register'" class="mb-4">
@@ -65,7 +65,7 @@
                         type="password"
                         required
                         placeholder="Repeat password"
-                        class="w-full rounded border pm-input px-3 py-2 text-sm pm-text placeholder-neutral-500 outline-none focus:border-[#FF6C37]"
+                        class="pm-field w-full"
                     >
                 </div>
 
@@ -76,8 +76,9 @@
                 <button
                     type="submit"
                     :disabled="busy"
-                    class="w-full rounded pm-accent-bg px-3 py-2 text-sm font-semibold text-white hover:bg-[#e85a2a] disabled:opacity-50"
+                    class="pm-btn pm-btn-primary w-full"
                 >
+                    <span v-if="busy" class="pm-spinner" aria-hidden="true"></span>
                     {{ busy ? 'Please wait…' : (mode === 'login' ? 'Login' : 'Create account') }}
                 </button>
             </form>

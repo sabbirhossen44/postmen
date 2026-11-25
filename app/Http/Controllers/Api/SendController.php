@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\SendRequestRequest;
-use App\Models\ApiRequest;
+use App\Repositories\ApiRequestRepository;
 use App\Repositories\CollectionRepository;
 use App\Repositories\EnvironmentRepository;
 use App\Repositories\GlobalVariableRepository;
@@ -22,8 +22,8 @@ class SendController extends Controller
 
         $savedRequest = null;
         if (! empty($data['request_id'])) {
-            $savedRequest = ApiRequest::where('id', $data['request_id'])
-                ->where('user_id', $user->id)->first();
+            // Any role may send a saved request in a workspace they can see.
+            $savedRequest = ApiRequestRepository::findForUser((int) $data['request_id'], $user->id);
             abort_unless($savedRequest, 404, 'Request not found.');
         }
 
@@ -34,8 +34,8 @@ class SendController extends Controller
         $workspace = null;
 
         if (! empty($data['environment_id'])) {
-            $environment = EnvironmentRepository::findOrFail($data['environment_id']);
-            abort_unless($environment->user_id === $user->id, 403, 'You do not own this environment.');
+            $environment = EnvironmentRepository::findForUser((int) $data['environment_id'], $user->id);
+            abort_unless($environment, 404, 'Environment not found.');
             $workspace = $environment->workspace;
         }
 
@@ -137,7 +137,7 @@ class SendController extends Controller
     {
         $flat = [];
 
-        foreach (GlobalVariableRepository::forUser($userId) as $global) {
+        foreach (GlobalVariableRepository::forAccessibleUser($userId) as $global) {
             $flat[$global->key] = $global->effectiveValue() ?? '';
         }
 

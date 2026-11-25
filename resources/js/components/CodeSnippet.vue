@@ -4,7 +4,7 @@
             <select
                 v-model="language"
                 @change="generate"
-                class="rounded border pm-input px-2 py-1.5 text-sm outline-none"
+                class="pm-field"
             >
                 <option v-for="l in languages" :key="l.value" :value="l.value">{{ l.label }}</option>
             </select>
@@ -12,14 +12,14 @@
                 type="button"
                 @click="generate"
                 :disabled="loading"
-                class="rounded border pm-border px-3 py-1.5 text-xs pm-text-2 hover:pm-active disabled:opacity-50"
+                class="pm-btn pm-btn-ghost pm-btn-sm"
             >
                 {{ loading ? 'Generating…' : 'Regenerate' }}
             </button>
             <button
                 type="button"
                 @click="copyCode"
-                class="rounded border pm-border px-3 py-1.5 text-xs pm-text-2 hover:pm-active"
+                class="pm-btn pm-btn-ghost pm-btn-sm"
             >
                 {{ copied ? 'Copied!' : 'Copy' }}
             </button>
@@ -86,7 +86,7 @@ export default {
                     this.error = 'Code endpoint error: ' + errMessage(e) + ' — showing a local snippet instead.'
                 }
                 this.code = generateCodeLocal(payload, this.language)
-                this.fallbackNote = 'Generated locally — the /api/code/generate endpoint is not available yet.'
+                this.fallbackNote = 'Generated locally — the server code generator did not return code.'
             } finally {
                 this.loading = false
             }

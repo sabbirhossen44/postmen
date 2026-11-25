@@ -1,15 +1,30 @@
 <template>
     <div class="pm-panel min-h-0 flex-1 overflow-y-auto p-4">
-        <div v-if="sending" class="flex h-full items-center justify-center">
-            <p class="text-sm pm-muted">Sending request…</p>
+        <div v-if="sending || (loading && !response)" class="flex h-full flex-col gap-3 p-1" aria-label="Loading response">
+            <div class="flex items-center gap-3">
+                <div class="pm-skeleton h-5 w-24"></div>
+                <div class="pm-skeleton h-5 w-20"></div>
+                <div class="pm-skeleton h-5 w-20"></div>
+                <span class="pm-spinner pm-spinner-dark" aria-hidden="true"></span>
+                <span class="text-sm pm-muted">Sending request…</span>
+            </div>
+            <div class="pm-skeleton h-8 w-full"></div>
+            <div class="pm-skeleton h-40 w-full"></div>
+            <div class="pm-skeleton h-6 w-3/4"></div>
         </div>
 
-        <div v-else-if="!response" class="flex h-full flex-col items-center justify-center text-center">
-            <p class="text-lg font-medium pm-text-2">No response yet</p>
-            <p class="mt-1 max-w-sm text-sm pm-faint">
-                Enter a URL above and press Send to see the response here.
-            </p>
-        </div>
+        <EmptyState
+            v-else-if="!response"
+            title="No response yet"
+            description="Enter a URL above and press Send — the status, headers, body and test results appear here."
+        >
+            <template #icon>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="h-6 w-6"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
+            </template>
+            <template #actions>
+                <button type="button" @click="$emit('open-palette')" class="pm-btn pm-btn-ghost pm-btn-sm">Find a request (⌘K)</button>
+            </template>
+        </EmptyState>
 
         <div v-else>
             <div class="mb-3 flex flex-wrap items-center gap-3">
@@ -21,9 +36,31 @@
                 <span v-if="response.content_type" class="truncate text-sm pm-muted">{{ response.content_type }}</span>
                 <span v-if="response.error" class="text-sm status-error">{{ response.error }}</span>
                 <span class="flex-1"></span>
-                <button type="button" @click="copyBody" class="rounded border pm-border px-2 py-1 text-xs pm-text-2 hover:pm-active">Copy</button>
-                <button type="button" @click="downloadBody" class="rounded border pm-border px-2 py-1 text-xs pm-text-2 hover:pm-active">Download</button>
-                <button type="button" @click="saveResponse" class="rounded border pm-border px-2 py-1 text-xs pm-text-2 hover:pm-active" title="Save response to a file">Save Response</button>
+                <button type="button" @click="copyBody" class="pm-btn pm-btn-ghost pm-btn-sm">Copy</button>
+                <button type="button" @click="downloadBody" class="pm-btn pm-btn-ghost pm-btn-sm">Download</button>
+                <button type="button" @click="saveResponse" class="pm-btn pm-btn-ghost pm-btn-sm" title="Save response to a file">Save Response</button>
+                <button
+                    v-if="request && request.id"
+                    type="button"
+                    @click="showExampleForm = !showExampleForm"
+                    class="pm-btn pm-btn-ghost pm-btn-sm"
+                    title="Save this response as a named example on the request"
+                >
+                    Save as Example
+                </button>
+            </div>
+            <div v-if="showExampleForm" class="mb-3 flex items-center gap-2">
+                <input
+                    v-model="exampleName"
+                    type="text"
+                    placeholder="Example name (e.g. Success 200)"
+                    class="min-w-0 flex-1 rounded border pm-input px-2 py-1.5 text-sm outline-none focus:border-[#FF6C37]"
+                    @keyup.enter="saveAsExample"
+                >
+                <button type="button" @click="saveAsExample" :disabled="!exampleName.trim() || exampleSaving" class="pm-btn pm-btn-ghost pm-btn-sm">
+                    {{ exampleSaving ? 'Saving…' : 'Save Example' }}
+                </button>
+                <span v-if="exampleMessage" class="text-xs" :class="exampleError ? 'text-red-400' : 'text-green-400'">{{ exampleMessage }}</span>
             </div>
 
             <div class="mb-3 flex flex-wrap items-center gap-1 border-b pm-border">
@@ -32,8 +69,8 @@
                     :key="t.key"
                     type="button"
                     @click="activeTab = t.key"
-                    :class="activeTab === t.key ? 'border-[#FF6C37] pm-text' : 'border-transparent pm-muted hover:pm-text'"
-                    class="border-b-2 px-3 py-2 text-xs font-medium"
+                    :class="activeTab === t.key ? 'pm-tab-active' : ''"
+                    class="pm-tab"
                 >
                     {{ t.label }}
                 </button>
@@ -43,7 +80,7 @@
                     v-model="search"
                     type="text"
                     placeholder="Search in response…"
-                    class="mb-1 w-48 rounded border pm-input px-2 py-1 text-xs outline-none focus:border-[#FF6C37]"
+                    class="pm-field pm-field-xs mb-1 w-48"
                 >
                 <span v-if="search && matchCount > 0" class="mb-1 text-xs pm-faint">{{ matchCount }} match{{ matchCount === 1 ? '' : 'es' }}</span>
             </div>
@@ -55,7 +92,7 @@
                         :key="m"
                         type="button"
                         @click="bodyMode = m"
-                        :class="bodyMode === m ? 'pm-accent-text border-[#FF6C37]' : 'pm-muted border-transparent'"
+                        :class="bodyMode === m ? 'pm-accent-text pm-border-accent' : 'pm-muted border-transparent'"
                         class="rounded border px-2 py-1 text-xs font-medium capitalize"
                     >
                         {{ m }}
@@ -113,7 +150,7 @@
                         <button
                             type="button"
                             @click="loadStoredCookies"
-                            class="rounded border pm-border px-2 py-1 text-xs pm-text-2 hover:pm-active"
+                            class="pm-btn pm-btn-ghost pm-btn-sm"
                         >
                             Refresh
                         </button>
@@ -121,7 +158,7 @@
                             type="button"
                             @click="clearStoredCookies"
                             :disabled="storedCookies.length === 0"
-                            class="rounded border pm-border px-2 py-1 text-xs pm-text-2 hover:pm-active disabled:opacity-50"
+                            class="pm-btn pm-btn-ghost pm-btn-sm"
                         >
                             Clear All
                         </button>
@@ -185,6 +222,25 @@
                     </div>
                 </div>
             </div>
+
+            <div v-show="activeTab === 'examples'">
+                <p v-if="!request || !request.id" class="text-sm pm-faint">Save the request first — examples live on a saved request.</p>
+                <p v-else-if="examples.length === 0" class="text-sm pm-faint">No saved examples yet. Send the request, then use “Save as Example” above.</p>
+                <div v-for="(ex, i) in examples" :key="i" class="mb-3 rounded border pm-border">
+                    <div class="flex items-center gap-2 px-3 py-2">
+                        <span class="text-sm font-medium pm-text-2">{{ ex.name }}</span>
+                        <span v-if="ex.status" class="text-xs" :class="ex.status >= 200 && ex.status < 300 ? 'status-ok' : 'status-error'">{{ ex.status }} {{ ex.status_text || '' }}</span>
+                        <span v-if="ex.saved_at" class="text-xs pm-faint">{{ String(ex.saved_at).slice(0, 10) }}</span>
+                        <span class="flex-1"></span>
+                        <button type="button" @click="expandedExample = expandedExample === i ? -1 : i" class="rounded border pm-border px-2 py-1 text-xs pm-text-2 hover:pm-active">{{ expandedExample === i ? 'Hide' : 'View' }}</button>
+                        <button type="button" @click="deleteExample(i)" class="rounded border pm-border px-2 py-1 text-xs pm-text-2 hover:pm-active hover:text-red-400">Delete</button>
+                    </div>
+                    <div v-if="expandedExample === i" class="border-t pm-border px-3 py-2">
+                        <p v-if="ex.content_type" class="mb-2 font-mono text-xs pm-muted">{{ ex.content_type }}</p>
+                        <pre class="overflow-x-auto whitespace-pre-wrap break-words rounded border pm-border pm-code-bg p-3 font-mono text-[13px] leading-relaxed pm-text-2">{{ exampleBody(ex) }}</pre>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </template>
@@ -193,17 +249,27 @@
 import { prettyJson, formatBytes, formatTime } from '../utils/variables.js'
 import { statusClass } from '../utils/methods.js'
 import { api, errMessage } from '../api.js'
+import { toastSuccess, toastError } from '../utils/toast.js'
 import JsonTree from './JsonTree.vue'
+import EmptyState from './EmptyState.vue'
 
 export default {
     name: 'ResponseViewer',
-    components: { JsonTree },
+    components: { JsonTree, EmptyState },
     props: {
         response: { type: Object, default: null },
         sending: { type: Boolean, default: false },
+        request: { type: Object, default: null },
+        loading: { type: Boolean, default: false },
     },
+    emits: ['examples-changed', 'open-palette'],
+
     data() {
-        return { activeTab: 'body', bodyMode: 'pretty', search: '', storedCookies: [], cookiesNote: '', cookiesLoaded: false }
+        return {
+            activeTab: 'body', bodyMode: 'pretty', search: '', storedCookies: [], cookiesNote: '', cookiesLoaded: false,
+            showExampleForm: false, exampleName: '', exampleSaving: false, exampleMessage: '', exampleError: false,
+            expandedExample: -1,
+        }
     },
     watch: {
         activeTab(value) {
@@ -217,7 +283,11 @@ export default {
                 { key: 'cookies', label: 'Cookies (' + this.cookies.length + ')' },
                 { key: 'headers', label: 'Headers (' + this.headerRows.length + ')' },
                 { key: 'tests', label: 'Test Results' + (this.testResults.length > 0 ? ' (' + this.testResults.length + ')' : '') },
+                { key: 'examples', label: 'Examples' + (this.examples.length > 0 ? ' (' + this.examples.length + ')' : '') },
             ]
+        },
+        examples() {
+            return (this.request && Array.isArray(this.request.examples)) ? this.request.examples : []
         },
         isJson() {
             if (!this.response) return false
@@ -293,7 +363,11 @@ export default {
         formatTime,
         statusClass,
         copyBody() {
-            if (navigator.clipboard) navigator.clipboard.writeText(this.rawBody).catch(() => {})
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(this.rawBody)
+                    .then(() => toastSuccess('Response copied to clipboard.'))
+                    .catch(() => toastError('Could not copy the response.'))
+            }
         },
         downloadBody() {
             const blob = new Blob([this.rawBody], { type: this.response.content_type || 'text/plain' })
@@ -307,9 +381,51 @@ export default {
             window.URL.revokeObjectURL(url)
         },
         saveResponse() {
-            // Saved examples (per-request named responses) are Phase 8;
-            // until then "Save Response" downloads the body to a file.
+            // "Save Response" downloads the body to a file; "Save as
+            // Example" stores it on the request (see saveAsExample).
             this.downloadBody()
+        },
+        exampleBody(ex) {
+            const b = ex.body
+            if (b === null || b === undefined) return ''
+            return typeof b === 'string' ? b : prettyJson(b)
+        },
+        async saveAsExample() {
+            if (!this.request || !this.request.id || !this.exampleName.trim() || !this.response) return
+            this.exampleSaving = true
+            this.exampleMessage = ''
+            this.exampleError = false
+            try {
+                const examples = await api.saveExample(this.request.id, {
+                    name: this.exampleName.trim(),
+                    status: this.response.status || null,
+                    status_text: this.response.status_text || '',
+                    headers: this.response.headers || {},
+                    body: this.rawBody,
+                    content_type: this.response.content_type || '',
+                    time_ms: this.response.time_ms || 0,
+                })
+                this.$emit('examples-changed', Array.isArray(examples) ? examples : [])
+                this.exampleName = ''
+                this.showExampleForm = false
+                this.exampleMessage = 'Example saved.'
+                this.activeTab = 'examples'
+            } catch (e) {
+                this.exampleMessage = 'Save failed: ' + errMessage(e)
+                this.exampleError = true
+            } finally {
+                this.exampleSaving = false
+            }
+        },
+        async deleteExample(index) {
+            if (!this.request || !this.request.id) return
+            try {
+                const examples = await api.deleteExample(this.request.id, index)
+                this.$emit('examples-changed', Array.isArray(examples) ? examples : [])
+                this.expandedExample = -1
+            } catch (e) {
+                toastError('Delete failed: ' + errMessage(e))
+            }
         },
         formatLog(line) {
             if (typeof line === 'string') return line
@@ -323,23 +439,16 @@ export default {
                 this.cookiesLoaded = true
             } catch (e) {
                 this.storedCookies = []
-                if (api.isMissingEndpoint(e)) {
-                    this.cookiesNote = 'Stored cookies are not available yet — the GET /api/cookies endpoint is still being built.'
-                } else {
-                    this.cookiesNote = 'Could not load stored cookies: ' + errMessage(e)
-                }
+                this.cookiesNote = 'Could not load stored cookies: ' + errMessage(e)
             }
         },
         async clearStoredCookies() {
             try {
                 await api.clearCookies()
                 this.storedCookies = []
+                toastSuccess('Stored cookies cleared.')
             } catch (e) {
-                if (api.isMissingEndpoint(e)) {
-                    this.cookiesNote = 'Clearing stored cookies is not available yet — the cookie endpoint is still being built.'
-                } else {
-                    alert('Clear cookies failed: ' + errMessage(e))
-                }
+                toastError('Clear cookies failed: ' + errMessage(e))
             }
         },
     },

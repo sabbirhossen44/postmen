@@ -97,6 +97,38 @@ export const api = {
     deleteWorkspace(id) {
         return http.delete('/workspaces/' + id).then((res) => res.data)
     },
+    transferWorkspace(id, userId) {
+        return http.post('/workspaces/' + id + '/transfer', { user_id: userId }).then(dataOf)
+    },
+
+    // Team workspaces: members, invitations, activity
+    listMembers(workspaceId) {
+        return http.get('/workspaces/' + workspaceId + '/members').then(listOf)
+    },
+    inviteMember(workspaceId, payload) {
+        return http.post('/workspaces/' + workspaceId + '/invite', payload).then(dataOf)
+    },
+    listInvitations(workspaceId) {
+        return http.get('/workspaces/' + workspaceId + '/invitations').then(listOf)
+    },
+    acceptInvitation(token) {
+        return http.post('/workspaces/invitations/' + token + '/accept').then(dataOf)
+    },
+    declineInvitation(id) {
+        return http.post('/workspaces/invitations/' + id + '/decline').then((res) => res.data)
+    },
+    updateMemberRole(workspaceId, userId, role) {
+        return http.patch('/workspaces/' + workspaceId + '/members/' + userId, { role }).then(dataOf)
+    },
+    removeMember(workspaceId, userId) {
+        return http.delete('/workspaces/' + workspaceId + '/members/' + userId).then((res) => res.data)
+    },
+    leaveWorkspace(workspaceId) {
+        return http.post('/workspaces/' + workspaceId + '/leave').then((res) => res.data)
+    },
+    listActivity(workspaceId) {
+        return http.get('/workspaces/' + workspaceId + '/activity').then((res) => res.data.data || [])
+    },
 
     // Collections
     listCollections(workspaceId) {
@@ -158,6 +190,34 @@ export const api = {
     duplicateRequest(id) {
         return http.post('/requests/' + id + '/duplicate').then(dataOf)
     },
+    moveRequest(id, payload) {
+        return http.patch('/requests/' + id + '/move', payload).then(dataOf)
+    },
+    saveExample(requestId, payload) {
+        return http.post('/requests/' + requestId + '/examples', payload).then(dataOf)
+    },
+    deleteExample(requestId, index) {
+        return http.delete('/requests/' + requestId + '/examples/' + index).then(dataOf)
+    },
+
+    // Collections: fork / duplicate / documentation
+    forkCollection(id, workspaceId) {
+        return http.post('/collections/' + id + '/fork', { workspace_id: workspaceId }).then(dataOf)
+    },
+    duplicateCollection(id) {
+        return http.post('/collections/' + id + '/duplicate').then(dataOf)
+    },
+    getCollectionDocumentation(id) {
+        return http.get('/collections/' + id + '/documentation').then(dataOf)
+    },
+
+    // User settings / preferences
+    getSettings() {
+        return http.get('/settings/me').then(dataOf)
+    },
+    updateSettings(payload) {
+        return http.patch('/settings/me', payload).then(dataOf)
+    },
 
     // Environments
     listEnvironments(workspaceId) {
@@ -166,6 +226,10 @@ export const api = {
     },
     createEnvironment(payload) {
         return http.post('/environments', payload).then(dataOf)
+    },
+    getEnvironment(id, includeSecrets) {
+        const params = includeSecrets ? { include_secrets: 1 } : {}
+        return http.get('/environments/' + id, { params }).then(dataOf)
     },
     updateEnvironment(id, payload) {
         return http.put('/environments/' + id, payload).then(dataOf)
@@ -210,9 +274,8 @@ export const api = {
         return http.post('/send', payload).then(dataOf)
     },
 
-    // ---- Backend parity (Phase 4-6): these endpoints land with the
-    // backend workers. Callers must handle 404/501 gracefully — the
-    // endpoint simply is not available yet. ----
+    // A 404/501 means the backend does not have this endpoint on this
+    // server version; callers fall back gracefully when that happens.
     isMissingEndpoint(err) {
         return !!err.response && (err.response.status === 404 || err.response.status === 501)
     },

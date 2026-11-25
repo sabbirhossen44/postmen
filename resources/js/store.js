@@ -37,6 +37,16 @@ export function addRun(run) {
 
 let tabSeq = 1
 
+// User preferences (GET /api/settings/me). Defaults until loaded; the
+// backend row is created on first fetch.
+const defaultSettings = {
+    theme: 'dark',
+    layout_density: 'comfortable',
+    default_body_type: 'raw',
+    default_timeout: 30,
+    sidebar_width: 320,
+}
+
 export function blankRequest() {
     return {
         id: null,
@@ -60,7 +70,7 @@ export function blankRequest() {
             // AWS Signature
             access_key: '', secret_key: '', region: '', service: '',
         },
-        body_type: 'none',
+        body_type: defaultSettings.default_body_type || 'none',
         body: {
             raw: '',
             raw_language: 'json',
@@ -71,8 +81,9 @@ export function blankRequest() {
             graphql: { query: '', variables: '' },
         },
         scripts: { pre_request: '', tests: '' },
-        settings: { timeout: 30, max_redirects: 5, follow_redirects: true, verify_ssl: true, send_cookies: true },
+        settings: { timeout: defaultSettings.default_timeout || 30, max_redirects: 5, follow_redirects: true, verify_ssl: true, send_cookies: true },
         description: '',
+        examples: [],
     }
 }
 
@@ -83,12 +94,46 @@ function newTab(request) {
         request: req,
         response: null,
         sending: false,
+        saving: false,
         saveMessage: '',
         saveMessageIsError: false,
         // JSON of the request as last saved / loaded — dirty dot compares
         // the live request against this.
         savedSnapshot: JSON.stringify(req),
     }
+}
+
+// Panel sizes are persisted in localStorage (there is no user-settings
+// endpoint on the backend, so local persistence is the only option).
+const SIDEBAR_WIDTH_KEY = 'postmen_sidebar_width'
+const SPLIT_KEY = 'postmen_builder_height_pct'
+// Last-known user settings, used when /settings/me is unreachable.
+const SETTINGS_KEY = 'postmen_settings'
+
+/** True when the current user may edit the active workspace. Viewers on a
+ * team workspace can send requests and look around, but not change anything. */
+export function canEditActiveWorkspace() {
+    const workspace = store.workspaces.find((w) => w.id === store.activeWorkspaceId)
+    if (!workspace || workspace.type !== 'team') return true
+    return workspace.role === 'owner' || workspace.role === 'admin' || workspace.role === 'editor'
+}
+
+function storedSidebarWidth() {
+    const v = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY) || '')
+    return v >= 200 && v <= 560 ? v : 320
+}
+
+export function storedBuilderHeightPct() {
+    const v = Number(localStorage.getItem(SPLIT_KEY) || '')
+    return v >= 25 && v <= 75 ? v : 48
+}
+
+export function persistSidebarWidth(width) {
+    try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(width))) } catch (e) { /* ignore */ }
+}
+
+export function persistBuilderHeightPct(pct) {
+    try { localStorage.setItem(SPLIT_KEY, String(Math.round(pct))) } catch (e) { /* ignore */ }
 }
 
 // Plain reactive store — no Pinia / Vuex. Every component imports this
@@ -98,6 +143,10 @@ export const store = reactive({
     token: localStorage.getItem(TOKEN_KEY) || '',
     workspaces: [],
     activeWorkspaceId: null,
+    // Team workspace state for the active workspace.
+    teamMembers: [],
+    teamInvitations: [],
+    teamActivity: [],
     collections: [],
     environments: [],
     activeEnvironmentId: null,
@@ -115,10 +164,12 @@ export const store = reactive({
     error: '',
     // Theme: 'dark' (default) or 'light', persisted in localStorage.
     theme: localStorage.getItem('postmen_theme') || 'dark',
+    // User preferences from GET /api/settings/me (null until loaded).
+    settings: null,
     // Global search text from the TopBar — Sidebar filters on it.
     searchQuery: '',
     sidebarCollapsed: false,
-    sidebarWidth: 320,
+    sidebarWidth: storedSidebarWidth(),
     consoleOpen: false,
     consoleEntries: [],
     // Multi-tab request area (Postman parity): one tab per open request.
@@ -130,6 +181,56 @@ export function setTheme(theme) {
     store.theme = theme === 'light' ? 'light' : 'dark'
     localStorage.setItem('postmen_theme', store.theme)
     document.documentElement.setAttribute('data-theme', store.theme)
+}
+
+// Apply loaded user settings: theme, layout density, sidebar width.
+// New blank requests pick up default body type / timeout via
+// defaultSettings (see blankRequest).
+export function applySettings(settings) {
+    if (!settings) return
+    Object.assign(defaultSettings, settings)
+    store.settings = settings
+    setTheme(settings.theme || 'dark')
+    if (settings.layout_density) {
+        document.documentElement.setAttribute('data-density', settings.layout_density)
+    }
+    if (settings.sidebar_width) store.sidebarWidth = settings.sidebar_width
+}
+
+export async function loadSettings() {
+    try {
+        const settings = await api.getSettings()
+        applySettings(settings)
+        try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)) } catch (e) { /* ignore */ }
+        return settings
+    } catch (e) {
+        // Settings are a preference, not a blocker — fall back to the
+        // last-known settings saved in localStorage, if any.
+        try {
+            const cached = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null')
+            if (cached) {
+                applySettings(cached)
+                return cached
+            }
+        } catch (e2) { /* ignore */ }
+        return null
+    }
+}
+
+export async function saveSettings(patch) {
+    try {
+        const settings = await api.updateSettings(patch)
+        applySettings(settings)
+        try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)) } catch (e) { /* ignore */ }
+        return settings
+    } catch (e) {
+        // Offline / backend down: keep the preference locally so the UI
+        // still reflects it, and sync it on the next successful save.
+        const settings = { ...(store.settings || {}), ...defaultSettings, ...patch }
+        applySettings(settings)
+        try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)) } catch (e2) { /* ignore */ }
+        return settings
+    }
 }
 
 export function activeTab() {
@@ -193,6 +294,9 @@ export function clearAuth() {
     setAuth('', null)
     store.workspaces = []
     store.activeWorkspaceId = null
+    store.teamMembers = []
+    store.teamInvitations = []
+    store.teamActivity = []
     store.collections = []
     store.environments = []
     store.activeEnvironmentId = null
@@ -211,6 +315,31 @@ export async function loadWorkspaces() {
         store.activeWorkspaceId = store.workspaces[0].id
     }
     return store.workspaces
+}
+
+/** Members, pending invitations and activity for a team workspace. */
+export async function loadTeam(workspaceId) {
+    if (!workspaceId) {
+        store.teamMembers = []
+        store.teamInvitations = []
+        store.teamActivity = []
+        return
+    }
+    const workspace = store.workspaces.find((w) => w.id === workspaceId)
+    if (workspace && workspace.type !== 'team') {
+        store.teamMembers = []
+        store.teamInvitations = []
+        store.teamActivity = []
+        return
+    }
+    const [members, invitations, activity] = await Promise.all([
+        api.listMembers(workspaceId).catch(() => []),
+        api.listInvitations(workspaceId).catch(() => []),
+        api.listActivity(workspaceId).catch(() => []),
+    ])
+    store.teamMembers = members
+    store.teamInvitations = invitations
+    store.teamActivity = activity
 }
 
 export async function loadCollections() {
@@ -257,8 +386,8 @@ export async function loadEnvironments() {
     return store.environments
 }
 
-// Globals are optional until the backend ships them — a 404/501 just
-// means the section stays empty with a "not available yet" note.
+// Globals are optional — a 404/501 just means the section stays empty
+// with a "could not be loaded" note.
 export async function loadGlobals() {
     try {
         store.globals = await api.listGlobals()
@@ -322,7 +451,7 @@ export async function loadAll() {
             if (errMessage(e) === 'Unauthenticated.') throw e
         }
         await loadWorkspaces()
-        await Promise.all([loadCollections(), loadEnvironments(), loadHistories(1), loadGlobals()])
+        await Promise.all([loadCollections(), loadEnvironments(), loadHistories(1), loadGlobals(), loadSettings()])
     } catch (e) {
         store.error = errMessage(e)
         throw e

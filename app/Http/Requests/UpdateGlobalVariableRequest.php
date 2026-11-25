@@ -15,6 +15,7 @@ class UpdateGlobalVariableRequest extends FormRequest
     {
         return [
             'key' => ['sometimes', 'required', 'string', 'max:255'],
+            'workspace_id' => ['nullable', 'integer', 'exists:workspaces,id'],
             'initial_value' => ['nullable', 'string'],
             'current_value' => ['nullable', 'string'],
             'type' => ['nullable', 'string', 'in:text,secret'],

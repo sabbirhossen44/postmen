@@ -8,6 +8,8 @@ use App\Models\Collection;
 use App\Models\Folder;
 use App\Repositories\CollectionRepository;
 use App\Repositories\FolderRepository;
+use App\Services\ActivityService;
+use App\Services\WorkspaceAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -15,9 +17,10 @@ class FolderController extends Controller
 {
     public function store(StoreFolderRequest $request): JsonResponse
     {
-        $collection = $this->ownedCollection((int) $request->collection_id);
+        $collection = $this->editableCollection((int) $request->collection_id);
 
         $folder = FolderRepository::create($request->validated());
+        ActivityService::created($collection->workspace, $request->user(), $folder, "folder {$folder->name}");
 
         return response()->json([
             'success' => true,
@@ -28,7 +31,7 @@ class FolderController extends Controller
 
     public function update(Request $request, Folder $folder): JsonResponse
     {
-        $this->ensureOwner($folder);
+        WorkspaceAccess::requireCollectionEdit(auth()->user(), $folder->collection);
 
         $data = $request->validate([
             'name' => ['sometimes', 'required', 'string', 'max:255'],
@@ -37,6 +40,7 @@ class FolderController extends Controller
         ]);
 
         FolderRepository::update($folder, $data);
+        ActivityService::updated($folder->collection->workspace, $request->user(), $folder, "folder {$folder->name}");
 
         return response()->json([
             'success' => true,
@@ -47,8 +51,12 @@ class FolderController extends Controller
 
     public function destroy(Folder $folder): JsonResponse
     {
-        $this->ensureOwner($folder);
+        WorkspaceAccess::requireCollectionEdit(auth()->user(), $folder->collection);
+
+        $workspace = $folder->collection->workspace;
+        $name = $folder->name;
         FolderRepository::delete($folder->id);
+        ActivityService::deleted($workspace, auth()->user(), $folder, "folder {$name}");
 
         return response()->json([
             'success' => true,
@@ -57,16 +65,13 @@ class FolderController extends Controller
         ]);
     }
 
-    protected function ownedCollection(int $collectionId): Collection
+    /** A collection in a workspace the user may edit, or 404. */
+    protected function editableCollection(int $collectionId): Collection
     {
         $collection = CollectionRepository::findForUser($collectionId, auth()->id());
         abort_unless($collection, 404, 'Collection not found.');
+        WorkspaceAccess::requireCan(auth()->user(), $collection->workspace, WorkspaceAccess::EDIT);
 
         return $collection;
-    }
-
-    protected function ensureOwner(Folder $folder): void
-    {
-        abort_unless($folder->collection->user_id === auth()->id(), 403, 'You do not own this folder.');
     }
 }

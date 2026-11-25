@@ -6,16 +6,12 @@
             <button
                 type="button"
                 @click="$emit('close')"
-                class="rounded border pm-border px-3 py-1.5 text-sm pm-text-2 hover:pm-active"
+                class="pm-btn pm-btn-ghost"
             >
                 ← Back to Builder
             </button>
         </div>
 
-        <p v-if="unavailable" class="mb-4 rounded border border-amber-600/50 bg-amber-950/40 px-3 py-2 text-sm text-amber-300">
-            The Collection Runner endpoint (POST /api/collections/{id}/run) is not available yet —
-            the backend is still being built. You can configure the run below; it will start once the endpoint lands.
-        </p>
         <p v-if="error" class="mb-4 rounded border border-red-600/50 bg-red-950/40 px-3 py-2 text-sm text-red-300">{{ error }}</p>
 
         <!-- Run configuration -->
@@ -25,7 +21,7 @@
                 <select
                     v-model="collectionId"
                     @change="onCollectionChange"
-                    class="w-full rounded border pm-input px-2 py-2 text-sm outline-none"
+                    class="pm-field w-full"
                 >
                     <option :value="null">Select a collection…</option>
                     <option v-for="c in store.collections" :key="c.id" :value="c.id">{{ c.name }}</option>
@@ -33,14 +29,14 @@
             </label>
             <label class="block">
                 <span class="mb-1 block text-xs font-medium pm-muted">Folder (optional)</span>
-                <select v-model="folderId" class="w-full rounded border pm-input px-2 py-2 text-sm outline-none">
+                <select v-model="folderId" class="pm-field w-full">
                     <option :value="null">Whole collection</option>
                     <option v-for="f in folders" :key="f.id" :value="f.id">{{ f.name }}</option>
                 </select>
             </label>
             <label class="block">
                 <span class="mb-1 block text-xs font-medium pm-muted">Environment</span>
-                <select v-model="environmentId" class="w-full rounded border pm-input px-2 py-2 text-sm outline-none">
+                <select v-model="environmentId" class="pm-field w-full">
                     <option :value="null">No Environment</option>
                     <option v-for="e in store.environments" :key="e.id" :value="e.id">{{ e.name }}</option>
                 </select>
@@ -48,11 +44,11 @@
             <div class="flex gap-3">
                 <label class="block flex-1">
                     <span class="mb-1 block text-xs font-medium pm-muted">Iterations</span>
-                    <input v-model.number="iterations" type="number" min="1" max="100" class="w-full rounded border pm-input px-2 py-2 text-sm outline-none">
+                    <input v-model.number="iterations" type="number" min="1" max="100" class="pm-field w-full">
                 </label>
                 <label class="block flex-1">
                     <span class="mb-1 block text-xs font-medium pm-muted">Delay (ms)</span>
-                    <input v-model.number="delay" type="number" min="0" max="60000" class="w-full rounded border pm-input px-2 py-2 text-sm outline-none">
+                    <input v-model.number="delay" type="number" min="0" max="60000" class="pm-field w-full">
                 </label>
             </div>
         </div>
@@ -69,7 +65,7 @@
                 rows="4"
                 spellcheck="false"
                 placeholder='[{"id": 1}, {"id": 2}]'
-                class="w-full rounded border pm-input px-3 py-2 font-mono text-sm outline-none focus:border-[#FF6C37]"
+                class="pm-field pm-field-mono w-full"
             ></textarea>
             <p v-if="dataError" class="mt-1 text-xs text-red-400">{{ dataError }}</p>
             <div v-if="resolved" class="mt-2 max-h-40 overflow-y-auto rounded border pm-border pm-code-bg p-3 font-mono text-xs pm-muted">
@@ -186,7 +182,6 @@ export default {
             currentRun: null,
             results: [],
             error: '',
-            unavailable: false,
             resolved: false,
             resolvedVariables: {},
             resolvedNote: '',
@@ -286,18 +281,13 @@ export default {
                 const res = await api.resolveEnvironment(this.environmentId)
                 this.resolvedVariables = (res && (res.variables || res.map || res)) || {}
             } catch (e) {
-                if (api.isMissingEndpoint(e)) {
-                    this.resolvedNote = 'Variable resolution endpoint (GET /api/environments/{id}/resolve) is not available yet.'
-                } else {
-                    this.resolvedNote = 'Could not resolve variables: ' + errMessage(e)
-                }
+                this.resolvedNote = 'Could not resolve variables: ' + errMessage(e)
             }
         },
         async startRun() {
             const data = this.parseData()
             if (data === undefined) return
             this.error = ''
-            this.unavailable = false
             this.running = true
             this.currentRun = null
             this.results = []
@@ -318,11 +308,7 @@ export default {
                 }
             } catch (e) {
                 this.running = false
-                if (api.isMissingEndpoint(e)) {
-                    this.unavailable = true
-                } else {
-                    this.error = 'Run failed: ' + errMessage(e)
-                }
+                this.error = 'Run failed: ' + errMessage(e)
             }
         },
         applyRun(run) {

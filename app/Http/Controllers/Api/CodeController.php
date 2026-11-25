@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\GenerateCodeRequest;
 use App\Models\ApiRequest;
 use App\Services\CodeGenerator;
+use App\Services\WorkspaceAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use InvalidArgumentException;
@@ -62,6 +63,6 @@ class CodeController extends Controller
 
     protected function ensureOwner(ApiRequest $apiRequest): void
     {
-        abort_unless($apiRequest->user_id === auth()->id(), 403, 'You do not own this request.');
+        WorkspaceAccess::requireCollectionView(auth()->user(), $apiRequest->collection);
     }
 }

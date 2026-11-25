@@ -16,6 +16,8 @@ class ApiRequest extends Model
         'collection_id',
         'folder_id',
         'user_id',
+        'created_by',
+        'updated_by',
         'name',
         'method',
         'url',
@@ -31,6 +33,7 @@ class ApiRequest extends Model
         'test_script',
         'settings',
         'description',
+        'examples',
         'sort_order',
     ];
 
@@ -41,6 +44,7 @@ class ApiRequest extends Model
         'body' => 'array',
         'scripts' => 'array',
         'settings' => 'array',
+        'examples' => 'array',
     ];
 
     /**

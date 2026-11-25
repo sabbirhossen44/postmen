@@ -9,6 +9,8 @@ use App\Http\Requests\UpdateEnvironmentRequest;
 use App\Models\Environment;
 use App\Repositories\EnvironmentRepository;
 use App\Repositories\WorkspaceRepository;
+use App\Services\ActivityService;
+use App\Services\WorkspaceAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -31,15 +33,20 @@ class EnvironmentController extends Controller
     {
         $workspace = WorkspaceRepository::findForUser((int) $request->workspace_id, auth()->id());
         abort_unless($workspace, 404, 'Workspace not found.');
+        WorkspaceAccess::requireCan($request->user(), $workspace, WorkspaceAccess::EDIT);
 
         $environment = EnvironmentRepository::create([
             ...$request->validated(),
             'user_id' => auth()->id(),
+            'created_by' => auth()->id(),
+            'updated_by' => auth()->id(),
         ]);
 
         if ($environment->is_active) {
             EnvironmentRepository::deactivateOthers($workspace->id, $environment->id);
         }
+
+        ActivityService::created($workspace, $request->user(), $environment, "environment {$environment->name}");
 
         return response()->json([
             'success' => true,
@@ -54,7 +61,7 @@ class EnvironmentController extends Controller
      */
     public function show(Request $environmentRequest, Environment $environment): JsonResponse
     {
-        $this->ensureOwner($environment);
+        WorkspaceAccess::requireCan(auth()->user(), $environment->workspace, WorkspaceAccess::VIEW);
 
         return response()->json([
             'success' => true,
@@ -65,12 +72,18 @@ class EnvironmentController extends Controller
 
     public function update(UpdateEnvironmentRequest $request, Environment $environment): JsonResponse
     {
-        $this->ensureOwner($environment);
-        EnvironmentRepository::update($environment, $request->validated());
+        WorkspaceAccess::requireCan(auth()->user(), $environment->workspace, WorkspaceAccess::EDIT);
+
+        EnvironmentRepository::update($environment, [
+            ...$request->validated(),
+            'updated_by' => auth()->id(),
+        ]);
 
         if ($environment->fresh()->is_active) {
             EnvironmentRepository::deactivateOthers($environment->workspace_id, $environment->id);
         }
+
+        ActivityService::updated($environment->workspace, $request->user(), $environment, "environment {$environment->name}");
 
         return response()->json([
             'success' => true,
@@ -81,8 +94,12 @@ class EnvironmentController extends Controller
 
     public function destroy(Environment $environment): JsonResponse
     {
-        $this->ensureOwner($environment);
+        WorkspaceAccess::requireCan(auth()->user(), $environment->workspace, WorkspaceAccess::EDIT);
+
+        $workspace = $environment->workspace;
+        $name = $environment->name;
         EnvironmentRepository::delete($environment->id);
+        ActivityService::deleted($workspace, auth()->user(), $environment, "environment {$name}");
 
         return response()->json([
             'success' => true,
@@ -93,10 +110,10 @@ class EnvironmentController extends Controller
 
     public function activate(Environment $environment): JsonResponse
     {
-        $this->ensureOwner($environment);
+        WorkspaceAccess::requireCan(auth()->user(), $environment->workspace, WorkspaceAccess::EDIT);
 
         EnvironmentRepository::deactivateOthers($environment->workspace_id, $environment->id);
-        EnvironmentRepository::update($environment, ['is_active' => true]);
+        EnvironmentRepository::update($environment, ['is_active' => true, 'updated_by' => auth()->id()]);
 
         return response()->json([
             'success' => true,
@@ -110,6 +127,7 @@ class EnvironmentController extends Controller
     {
         $workspace = WorkspaceRepository::findForUser((int) $request->workspace_id, auth()->id());
         abort_unless($workspace, 404, 'Workspace not found.');
+        WorkspaceAccess::requireCan($request->user(), $workspace, WorkspaceAccess::EDIT);
 
         $json = $request->filled('json')
             ? $request->input('json')
@@ -126,10 +144,14 @@ class EnvironmentController extends Controller
         $environment = EnvironmentRepository::create([
             'workspace_id' => $workspace->id,
             'user_id' => auth()->id(),
+            'created_by' => auth()->id(),
+            'updated_by' => auth()->id(),
             'name' => $json['name'],
             'is_active' => false,
             'variables' => $this->toVariables($json['values'] ?? $json['variables'] ?? []),
         ]);
+
+        ActivityService::created($workspace, $request->user(), $environment, "environment {$environment->name} (imported)");
 
         return response()->json([
             'success' => true,
@@ -141,7 +163,7 @@ class EnvironmentController extends Controller
     /** Export as Postman environment JSON v2.1. */
     public function export(Environment $environment): JsonResponse
     {
-        $this->ensureOwner($environment);
+        WorkspaceAccess::requireCan(auth()->user(), $environment->workspace, WorkspaceAccess::VIEW);
 
         return response()->json([
             'success' => true,
@@ -184,10 +206,5 @@ class EnvironmentController extends Controller
         }
 
         return $variables;
-    }
-
-    protected function ensureOwner(Environment $environment): void
-    {
-        abort_unless($environment->user_id === auth()->id(), 403, 'You do not own this environment.');
     }
 }

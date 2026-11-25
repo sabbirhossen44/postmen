@@ -7,8 +7,10 @@ use App\Http\Requests\ImportCurlRequest;
 use App\Http\Requests\ImportOpenApiRequest;
 use App\Repositories\CollectionRepository;
 use App\Repositories\WorkspaceRepository;
+use App\Services\ActivityService;
 use App\Services\CurlImporter;
 use App\Services\OpenApiImporter;
+use App\Services\WorkspaceAccess;
 use Illuminate\Http\JsonResponse;
 use InvalidArgumentException;
 
@@ -18,6 +20,7 @@ class ImportController extends Controller
     {
         $workspace = WorkspaceRepository::findForUser((int) $request->workspace_id, auth()->id());
         abort_unless($workspace, 404, 'Workspace not found.');
+        WorkspaceAccess::requireCan($request->user(), $workspace, WorkspaceAccess::EDIT);
 
         $collection = null;
 
@@ -36,6 +39,8 @@ class ImportController extends Controller
             ], 422);
         }
 
+        ActivityService::created($workspace, $request->user(), $result['collection'], "collection {$result['collection']->name} (imported)");
+
         return response()->json([
             'success' => true,
             'message' => 'cURL command(s) imported.',
@@ -50,6 +55,7 @@ class ImportController extends Controller
     {
         $workspace = WorkspaceRepository::findForUser((int) $request->workspace_id, auth()->id());
         abort_unless($workspace, 404, 'Workspace not found.');
+        WorkspaceAccess::requireCan($request->user(), $workspace, WorkspaceAccess::EDIT);
 
         $spec = $request->filled('json')
             ? $request->input('json')
@@ -66,6 +72,8 @@ class ImportController extends Controller
                 'data' => null,
             ], 422);
         }
+
+        ActivityService::created($workspace, $request->user(), $collection, "collection {$collection->name} (imported)");
 
         return response()->json([
             'success' => true,
