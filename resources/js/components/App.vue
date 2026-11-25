@@ -6,6 +6,7 @@
             @manage-environments="sidebarTab = 'environments'"
             @imported="sidebarTab = 'collections'"
             @toggle-console="store.consoleOpen = !store.consoleOpen"
+            @open-runner="mainView = 'runner'"
         />
         <div v-if="store.error" class="shrink-0 bg-red-950 px-4 py-2 text-sm text-red-300">
             {{ store.error }}
@@ -36,6 +37,8 @@
                 title="Drag to resize sidebar"
             ></div>
             <main class="flex min-h-0 min-w-0 flex-1 flex-col">
+                <RunnerView v-if="mainView === 'runner'" @close="mainView = 'builder'" />
+                <template v-else>
                 <RequestTabs
                     :tabs="store.tabs"
                     :active-tab-id="store.activeTabId"
@@ -56,6 +59,7 @@
                 </div>
                 <div class="pm-resizer pm-resizer-v h-1 w-full" @mousedown="startSplitResize" title="Drag to resize"></div>
                 <ResponseViewer :response="activeTab().response" :sending="activeTab().sending" />
+                </template>
             </main>
         </div>
         <ConsoleDrawer
@@ -92,6 +96,7 @@ import Sidebar from './Sidebar.vue'
 import RequestTabs from './RequestTabs.vue'
 import RequestBuilder from './RequestBuilder.vue'
 import ResponseViewer from './ResponseViewer.vue'
+import RunnerView from './RunnerView.vue'
 import ConsoleDrawer from './ConsoleDrawer.vue'
 
 // Normalise a saved request (either shape) into builder state.
@@ -108,7 +113,12 @@ function normalizeRequest(saved) {
     req.auth_type = saved.auth_type || 'none'
     const savedAuth = saved.auth || {}
     req.auth = Object.assign(
-        { token: '', username: '', password: '', key: '', value: '', in: 'header' },
+        {
+            token: '', username: '', password: '', key: '', value: '', in: 'header',
+            grant_type: 'client_credentials', token_url: '', client_id: '', client_secret: '',
+            scope: '', access_token: '', token_type: 'Bearer',
+            access_key: '', secret_key: '', region: '', service: '',
+        },
         savedAuth,
     )
     // Legacy saved requests used `add_to` — map it to the canonical `in`.
@@ -129,8 +139,16 @@ function normalizeRequest(saved) {
         },
     }
     req.body_file_media_id = saved.body_file_media_id || null
-    req.scripts = Object.assign({ pre_request: '', tests: '' }, saved.scripts || {})
-    req.settings = Object.assign({ timeout: 30, max_redirects: 5, follow_redirects: true }, saved.settings || {})
+    // Scripts: backend now also sends pre_request_script / test_script.
+    req.scripts = Object.assign(
+        { pre_request: '', tests: '' },
+        saved.scripts || {},
+        {
+            pre_request: (saved.scripts && saved.scripts.pre_request) || saved.pre_request_script || '',
+            tests: (saved.scripts && saved.scripts.tests) || saved.test_script || '',
+        },
+    )
+    req.settings = Object.assign({ timeout: 30, max_redirects: 5, follow_redirects: true, verify_ssl: true, send_cookies: true }, saved.settings || {})
     req.description = saved.description || ''
     return req
 }
@@ -171,12 +189,13 @@ function cleanRows(rows) {
 
 export default {
     name: 'App',
-    components: { AuthView, TopBar, Sidebar, RequestTabs, RequestBuilder, ResponseViewer, ConsoleDrawer },
+    components: { AuthView, TopBar, Sidebar, RequestTabs, RequestBuilder, ResponseViewer, RunnerView, ConsoleDrawer },
     data() {
         return {
             store,
             sidebarTab: 'collections',
             builderHeightPct: 48,
+            mainView: 'builder',
         }
     },
     computed: {
@@ -213,6 +232,7 @@ export default {
         onLoggedOut() {
             this.resetActiveTab()
             this.sidebarTab = 'collections'
+            this.mainView = 'builder'
         },
         resetActiveTab() {
             const tab = activeTab()
@@ -337,6 +357,9 @@ export default {
                 body,
                 body_file_media_id: req.body_file_media_id || null,
                 scripts: req.scripts,
+                // Backend parity shape: top-level script fields.
+                pre_request_script: req.scripts.pre_request || '',
+                test_script: req.scripts.tests || '',
                 settings: req.settings,
                 description: req.description || '',
                 folder_id: req.folder_id,

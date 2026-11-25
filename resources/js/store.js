@@ -10,6 +10,31 @@ function storedUser() {
     }
 }
 
+const RUNS_KEY = 'postmen_runs'
+
+function storedRuns() {
+    try {
+        const list = JSON.parse(localStorage.getItem(RUNS_KEY) || '[]')
+        return Array.isArray(list) ? list : []
+    } catch (e) {
+        return []
+    }
+}
+
+// Record (or refresh) a run in history, newest first, capped at 20.
+export function addRun(run) {
+    if (!run) return
+    const entry = Object.assign({}, run, {
+        id: run.id || ('local-' + Date.now()),
+        created_at: run.created_at || new Date().toISOString().slice(0, 19).replace('T', ' '),
+    })
+    const idx = store.runs.findIndex((r) => String(r.id) === String(entry.id))
+    if (idx !== -1) store.runs.splice(idx, 1, entry)
+    else store.runs.unshift(entry)
+    if (store.runs.length > 20) store.runs.length = 20
+    try { localStorage.setItem(RUNS_KEY, JSON.stringify(store.runs)) } catch (e) { /* ignore */ }
+}
+
 let tabSeq = 1
 
 export function blankRequest() {
@@ -26,7 +51,15 @@ export function blankRequest() {
         // Canonical API-Key key is `in` ('header' | 'query'), matching the
         // backend and the importer/exporter. `add_to` was the old frontend
         // name and silently never worked — do not bring it back.
-        auth: { token: '', username: '', password: '', key: '', value: '', in: 'header' },
+        auth: {
+            token: '', username: '', password: '', key: '', value: '', in: 'header',
+            // Digest
+            // OAuth 2.0
+            grant_type: 'client_credentials', token_url: '', client_id: '', client_secret: '',
+            scope: '', access_token: '', token_type: 'Bearer',
+            // AWS Signature
+            access_key: '', secret_key: '', region: '', service: '',
+        },
         body_type: 'none',
         body: {
             raw: '',
@@ -38,7 +71,7 @@ export function blankRequest() {
             graphql: { query: '', variables: '' },
         },
         scripts: { pre_request: '', tests: '' },
-        settings: { timeout: 30, max_redirects: 5, follow_redirects: true },
+        settings: { timeout: 30, max_redirects: 5, follow_redirects: true, verify_ssl: true, send_cookies: true },
         description: '',
     }
 }
@@ -68,6 +101,12 @@ export const store = reactive({
     collections: [],
     environments: [],
     activeEnvironmentId: null,
+    // Workspace-wide variables (GET /api/globals) — lowest precedence.
+    globals: [],
+    globalsUnavailable: false,
+    // Collection Runner history (local, persisted; backend GET /api/runs/{id}
+    // refreshes an entry when available).
+    runs: storedRuns(),
     histories: [],
     historyPage: 1,
     historyLastPage: 1,
@@ -157,6 +196,8 @@ export function clearAuth() {
     store.collections = []
     store.environments = []
     store.activeEnvironmentId = null
+    store.globals = []
+    store.globalsUnavailable = false
     store.histories = []
     store.historyPage = 1
     store.historyLastPage = 1
@@ -216,6 +257,20 @@ export async function loadEnvironments() {
     return store.environments
 }
 
+// Globals are optional until the backend ships them — a 404/501 just
+// means the section stays empty with a "not available yet" note.
+export async function loadGlobals() {
+    try {
+        store.globals = await api.listGlobals()
+        store.globalsUnavailable = false
+    } catch (e) {
+        store.globals = []
+        store.globalsUnavailable = api.isMissingEndpoint(e)
+        if (!store.globalsUnavailable) throw e
+    }
+    return store.globals
+}
+
 export async function loadHistories(page = 1) {
     const res = await api.listHistories(page)
     store.histories = page === 1 ? res.items : store.histories.concat(res.items)
@@ -244,11 +299,15 @@ export function collectionVariables(collectionId) {
     return collectVariables(collection.variables)
 }
 
-// Full preview scope: collection variables first, environment wins on
+// Full preview scope: globals first, then collection, environment wins on
 // duplicates — the same precedence the backend applies at send time.
 // (Bug §2.4: the preview used to see environment variables only.)
 export function variablesForPreview(collectionId) {
-    return collectVariables(collectionVariables(collectionId), activeEnvironmentVariables())
+    return collectVariables(
+        collectVariables(store.globals),
+        collectionVariables(collectionId),
+        activeEnvironmentVariables(),
+    )
 }
 
 export async function loadAll() {
@@ -263,7 +322,7 @@ export async function loadAll() {
             if (errMessage(e) === 'Unauthenticated.') throw e
         }
         await loadWorkspaces()
-        await Promise.all([loadCollections(), loadEnvironments(), loadHistories(1)])
+        await Promise.all([loadCollections(), loadEnvironments(), loadHistories(1), loadGlobals()])
     } catch (e) {
         store.error = errMessage(e)
         throw e

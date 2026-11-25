@@ -121,11 +121,16 @@
                     class="mb-3 rounded border pm-input px-2 py-2 text-sm outline-none"
                 >
                     <option value="none">No Auth</option>
+                    <option value="inherit">Inherit auth from parent</option>
                     <option value="bearer">Bearer Token</option>
                     <option value="basic">Basic Auth</option>
+                    <option value="digest">Digest Auth</option>
                     <option value="api_key">API Key</option>
+                    <option value="oauth2">OAuth 2.0</option>
+                    <option value="aws">AWS Signature</option>
                 </select>
-                <p class="mb-3 text-xs pm-faint">Inherit-auth-from-parent and OAuth 2.0 / Digest / AWS need the collection-auth UI (Phase 3) and auth expansion (Phase 4).</p>
+                <p v-if="request.auth_type === 'inherit'" class="mb-3 text-xs pm-faint">Uses the auth of the parent collection / folder when the request is sent. No credentials on this request.</p>
+                <p v-if="authNote" class="mb-3 text-xs text-amber-400">{{ authNote }}</p>
                 <div v-if="request.auth_type === 'bearer'">
                     <label class="mb-1 block text-xs font-medium pm-muted">Token</label>
                     <input
@@ -148,6 +153,83 @@
                         placeholder="Password"
                         class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]"
                     >
+                </div>
+                <div v-if="request.auth_type === 'digest'" class="flex max-w-md gap-2">
+                    <input
+                        v-model="request.auth.username"
+                        type="text"
+                        placeholder="Username"
+                        class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]"
+                    >
+                    <input
+                        v-model="request.auth.password"
+                        type="password"
+                        placeholder="Password"
+                        class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]"
+                    >
+                </div>
+                <div v-if="request.auth_type === 'oauth2'" class="max-w-xl">
+                    <div class="mb-2 flex flex-wrap gap-2">
+                        <label class="flex-1">
+                            <span class="mb-1 block text-xs font-medium pm-muted">Grant Type</span>
+                            <select v-model="request.auth.grant_type" class="w-full rounded border pm-input px-2 py-2 text-sm outline-none">
+                                <option value="client_credentials">Client Credentials</option>
+                                <option value="password">Password</option>
+                                <option value="authorization_code">Authorization Code</option>
+                                <option value="refresh_token">Refresh Token</option>
+                            </select>
+                        </label>
+                        <label class="flex-1">
+                            <span class="mb-1 block text-xs font-medium pm-muted">Access Token URL</span>
+                            <input v-model="request.auth.token_url" type="text" placeholder="https://example.com/oauth/token" class="w-full rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]">
+                        </label>
+                    </div>
+                    <div class="mb-2 flex flex-wrap gap-2">
+                        <input v-model="request.auth.client_id" type="text" placeholder="Client ID" class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]">
+                        <input v-model="request.auth.client_secret" type="password" placeholder="Client Secret" class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]">
+                    </div>
+                    <div class="mb-2 flex flex-wrap gap-2">
+                        <input v-model="request.auth.scope" type="text" placeholder="Scope (space separated)" class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]">
+                        <input
+                            v-if="request.auth.grant_type === 'password'"
+                            v-model="request.auth.username"
+                            type="text"
+                            placeholder="Username"
+                            class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]"
+                        >
+                        <input
+                            v-if="request.auth.grant_type === 'password'"
+                            v-model="request.auth.password"
+                            type="password"
+                            placeholder="Password"
+                            class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]"
+                        >
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button
+                            type="button"
+                            @click="fetchOAuthToken"
+                            :disabled="oauthLoading || !request.auth.token_url"
+                            class="rounded border pm-border px-3 py-1.5 text-xs pm-text-2 hover:pm-active disabled:opacity-50"
+                        >
+                            {{ oauthLoading ? 'Requesting…' : 'Get New Access Token' }}
+                        </button>
+                        <span v-if="request.auth.access_token" class="truncate font-mono text-xs text-green-400" title="Access token (stored on the request)">
+                            Token: {{ request.auth.access_token.slice(0, 24) }}…
+                        </span>
+                        <span v-if="oauthMessage" class="text-xs pm-muted">{{ oauthMessage }}</span>
+                    </div>
+                    <p v-if="!request.id" class="mt-2 text-xs pm-faint">Save the request first — the token endpoint needs a saved request id.</p>
+                </div>
+                <div v-if="request.auth_type === 'aws'" class="max-w-xl">
+                    <div class="mb-2 flex flex-wrap gap-2">
+                        <input v-model="request.auth.access_key" type="text" placeholder="Access Key" class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]">
+                        <input v-model="request.auth.secret_key" type="password" placeholder="Secret Key" class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]">
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <input v-model="request.auth.region" type="text" placeholder="AWS Region (e.g. eu-west-1)" class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]">
+                        <input v-model="request.auth.service" type="text" placeholder="Service (e.g. s3)" class="min-w-0 flex-1 rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]">
+                    </div>
                 </div>
                 <div v-if="request.auth_type === 'api_key'" class="flex max-w-xl flex-wrap gap-2">
                     <input
@@ -262,23 +344,56 @@
 
             <!-- Scripts -->
             <div v-show="activeTab === 'scripts'">
-                <p class="mb-2 text-xs pm-faint">Scripts are stored with the request. Running them needs the sandboxed script runner (Phase 5) — they are not executed yet.</p>
-                <label class="mb-1 block text-xs font-medium pm-muted">Pre-request Script</label>
-                <textarea
-                    v-model="request.scripts.pre_request"
-                    rows="4"
-                    spellcheck="false"
-                    placeholder="// pm.environment.set('token', 'abc');"
-                    class="mb-3 w-full rounded border pm-input px-3 py-2 font-mono text-sm outline-none focus:border-[#FF6C37]"
-                ></textarea>
-                <label class="mb-1 block text-xs font-medium pm-muted">Post-response / Tests</label>
-                <textarea
-                    v-model="request.scripts.tests"
-                    rows="4"
-                    spellcheck="false"
-                    placeholder="// pm.test('Status is 200', () => pm.response.to.have.status(200));"
-                    class="w-full rounded border pm-input px-3 py-2 font-mono text-sm outline-none focus:border-[#FF6C37]"
-                ></textarea>
+                <p class="mb-2 text-xs pm-faint">Pre-request and test scripts run in the backend sandbox when the request is sent; results appear in the ResponseViewer Test Results tab.</p>
+                <div class="mb-2 flex flex-wrap items-center gap-2">
+                    <label class="text-xs font-medium pm-muted">Pre-request Script</label>
+                    <span class="flex-1"></span>
+                    <select v-model="preSnippet" class="rounded border pm-input px-2 py-1 text-xs outline-none">
+                        <option value="">Insert snippet…</option>
+                        <option v-for="s in preSnippets" :key="s.key" :value="s.key">{{ s.label }}</option>
+                    </select>
+                    <button type="button" @click="insertSnippet('pre_request')" :disabled="!preSnippet" class="rounded border pm-border px-2 py-1 text-xs pm-text-2 hover:pm-active disabled:opacity-50">Insert</button>
+                </div>
+                <div class="mb-3 flex overflow-hidden rounded border pm-border">
+                    <div ref="preGutter" class="shrink-0 select-none overflow-hidden px-2 py-2 text-right font-mono text-xs leading-5 pm-faint pm-code-bg">
+                        <div v-for="n in lineCount(request.scripts.pre_request)" :key="n">{{ n }}</div>
+                    </div>
+                    <textarea
+                        v-model="request.scripts.pre_request"
+                        rows="6"
+                        spellcheck="false"
+                        placeholder="// pm.environment.set('token', 'abc');"
+                        class="min-w-0 flex-1 px-3 py-2 font-mono text-sm leading-5 outline-none pm-input"
+                        @scroll="syncGutter('preGutter', $event)"
+                    ></textarea>
+                </div>
+                <div class="mb-2 flex flex-wrap items-center gap-2">
+                    <label class="text-xs font-medium pm-muted">Post-response / Tests</label>
+                    <span class="flex-1"></span>
+                    <select v-model="testSnippet" class="rounded border pm-input px-2 py-1 text-xs outline-none">
+                        <option value="">Insert snippet…</option>
+                        <option v-for="s in testSnippets" :key="s.key" :value="s.key">{{ s.label }}</option>
+                    </select>
+                    <button type="button" @click="insertSnippet('tests')" :disabled="!testSnippet" class="rounded border pm-border px-2 py-1 text-xs pm-text-2 hover:pm-active disabled:opacity-50">Insert</button>
+                </div>
+                <div class="flex overflow-hidden rounded border pm-border">
+                    <div ref="testGutter" class="shrink-0 select-none overflow-hidden px-2 py-2 text-right font-mono text-xs leading-5 pm-faint pm-code-bg">
+                        <div v-for="n in lineCount(request.scripts.tests)" :key="n">{{ n }}</div>
+                    </div>
+                    <textarea
+                        v-model="request.scripts.tests"
+                        rows="6"
+                        spellcheck="false"
+                        placeholder="// pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                        class="min-w-0 flex-1 px-3 py-2 font-mono text-sm leading-5 outline-none pm-input"
+                        @scroll="syncGutter('testGutter', $event)"
+                    ></textarea>
+                </div>
+            </div>
+
+            <!-- Code -->
+            <div v-show="activeTab === 'code'">
+                <CodeSnippet :request="request" />
             </div>
 
             <!-- Settings -->
@@ -295,6 +410,12 @@
                     <label class="flex cursor-pointer items-center gap-2">
                         <input v-model="request.settings.follow_redirects" type="checkbox" class="accent-[#FF6C37]"> Follow redirects
                     </label>
+                    <label class="flex cursor-pointer items-center gap-2">
+                        <input v-model="request.settings.verify_ssl" type="checkbox" class="accent-[#FF6C37]"> Verify SSL certificates
+                    </label>
+                    <label class="flex cursor-pointer items-center gap-2">
+                        <input v-model="request.settings.send_cookies" type="checkbox" class="accent-[#FF6C37]"> Send cookies (use the stored cookie jar)
+                    </label>
                     <label class="block">
                         <span class="mb-1 block text-xs font-medium pm-muted">Description</span>
                         <textarea v-model="request.description" rows="2" placeholder="What does this request do?" class="w-full rounded border pm-input px-3 py-2 text-sm outline-none focus:border-[#FF6C37]"></textarea>
@@ -309,11 +430,30 @@
 import { store, variablesForPreview } from '../store.js'
 import { resolveVariables, variableSegments, pathVariables } from '../utils/variables.js'
 import { methodClass, METHODS } from '../utils/methods.js'
+import { api, errMessage } from '../api.js'
 import KeyValueEditor from './KeyValueEditor.vue'
+import CodeSnippet from './CodeSnippet.vue'
+
+const PRE_SNIPPETS = [
+    { key: 'env-set', label: "pm.environment.set('key', 'value')", code: "pm.environment.set('key', 'value');" },
+    { key: 'var-set', label: "pm.variables.set('key', 'value')", code: "pm.variables.set('key', 'value');" },
+    { key: 'global-set', label: "pm.globals.set('key', 'value')", code: "pm.globals.set('key', 'value');" },
+    { key: 'timestamp', label: 'Set timestamp variable', code: "pm.environment.set('timestamp', Date.now());" },
+    { key: 'header', label: 'Add a header', code: "pm.request.headers.add({ key: 'X-Custom', value: 'value' });" },
+    { key: 'log', label: 'console.log', code: "console.log('pre-request running');" },
+]
+
+const TEST_SNIPPETS = [
+    { key: 'status-200', label: "pm.test('Status is 200')", code: "pm.test('Status is 200', () => pm.response.to.have.status(200));" },
+    { key: 'time', label: 'Response time under 500ms', code: "pm.test('Response time under 500ms', () => pm.expect(pm.response.responseTime).to.be.below(500));" },
+    { key: 'body-field', label: 'Body has a field', code: "pm.test('Body has id', () => {\n    const json = pm.response.json();\n    pm.expect(json.id).to.exist;\n});" },
+    { key: 'save-token', label: 'Save token to environment', code: "pm.environment.set('token', pm.response.json().token);" },
+    { key: 'log', label: 'console.log response', code: "console.log('response:', pm.response.json());" },
+]
 
 export default {
     name: 'RequestBuilder',
-    components: { KeyValueEditor },
+    components: { KeyValueEditor, CodeSnippet },
     props: {
         request: { type: Object, required: true },
         sending: { type: Boolean, default: false },
@@ -328,6 +468,13 @@ export default {
             methods: METHODS,
             activeTab: 'params',
             showAutoHeaders: false,
+            authNote: '',
+            oauthLoading: false,
+            oauthMessage: '',
+            preSnippet: '',
+            testSnippet: '',
+            preSnippets: PRE_SNIPPETS,
+            testSnippets: TEST_SNIPPETS,
         }
     },
     computed: {
@@ -338,6 +485,7 @@ export default {
                 { key: 'headers', label: 'Headers', count: this.request.headers.filter((r) => r.key).length },
                 { key: 'body', label: 'Body' },
                 { key: 'scripts', label: 'Scripts' },
+                { key: 'code', label: 'Code' },
                 { key: 'settings', label: 'Settings' },
             ]
         },
@@ -389,6 +537,10 @@ export default {
             }
             if (this.request.auth_type === 'bearer') headers.push({ key: 'Authorization', value: 'Bearer ••• (auto)' })
             if (this.request.auth_type === 'basic') headers.push({ key: 'Authorization', value: 'Basic ••• (auto)' })
+            if (this.request.auth_type === 'digest') headers.push({ key: 'Authorization', value: 'Digest ••• (auto, negotiated at send)' })
+            if (this.request.auth_type === 'oauth2') headers.push({ key: 'Authorization', value: 'Bearer ••• (auto, from the access token)' })
+            if (this.request.auth_type === 'aws') headers.push({ key: 'Authorization', value: 'AWS4-HMAC-SHA256 ••• (auto, signed at send)' })
+            if (this.request.auth_type === 'inherit') headers.push({ key: 'Authorization', value: 'from the parent collection / folder (auto)' })
             if (this.request.auth_type === 'api_key' && this.request.auth.in === 'header') {
                 headers.push({ key: this.request.auth.key || '(api key)', value: '••• (auto)' })
             }
@@ -449,6 +601,62 @@ export default {
             const file = event.target.files && event.target.files[0]
             if (file) {
                 this.request.body.binary = { _file: file, name: file.name, binary_content_type: file.type || '' }
+            }
+        },
+        // ---- Scripts: line numbers + snippet picker ----
+        lineCount(text) {
+            return Math.max(1, String(text || '').split('\n').length)
+        },
+        syncGutter(refName, event) {
+            const gutter = this.$refs[refName]
+            if (gutter) gutter.scrollTop = event.target.scrollTop
+        },
+        insertSnippet(target) {
+            const key = target === 'pre_request' ? this.preSnippet : this.testSnippet
+            const list = target === 'pre_request' ? this.preSnippets : this.testSnippets
+            const snippet = list.find((s) => s.key === key)
+            if (!snippet) return
+            const field = target === 'pre_request' ? 'pre_request' : 'tests'
+            const current = this.request.scripts[field] || ''
+            this.request.scripts[field] = current + (current && !current.endsWith('\n') ? '\n' : '') + snippet.code + '\n'
+            if (target === 'pre_request') this.preSnippet = ''
+            else this.testSnippet = ''
+        },
+        // ---- OAuth 2.0: exchange credentials for an access token ----
+        async fetchOAuthToken() {
+            if (!this.request.id) {
+                this.oauthMessage = 'Save the request first.'
+                return
+            }
+            this.oauthLoading = true
+            this.oauthMessage = ''
+            this.authNote = ''
+            try {
+                const res = await api.fetchOAuthToken(this.request.id, {
+                    grant_type: this.request.auth.grant_type,
+                    token_url: this.request.auth.token_url,
+                    client_id: this.request.auth.client_id,
+                    client_secret: this.request.auth.client_secret,
+                    scope: this.request.auth.scope,
+                    username: this.request.auth.username,
+                    password: this.request.auth.password,
+                })
+                const token = res && (res.access_token || res.token || (res.data && res.data.access_token))
+                if (token) {
+                    this.request.auth.access_token = token
+                    if (res.token_type) this.request.auth.token_type = res.token_type
+                    this.oauthMessage = 'Access token received.'
+                } else {
+                    this.oauthMessage = 'No token in the response.'
+                }
+            } catch (e) {
+                if (api.isMissingEndpoint(e)) {
+                    this.authNote = 'The OAuth token endpoint (POST /api/requests/{id}/oauth/token) is not available yet.'
+                } else {
+                    this.oauthMessage = 'Token request failed: ' + errMessage(e)
+                }
+            } finally {
+                this.oauthLoading = false
             }
         },
     },

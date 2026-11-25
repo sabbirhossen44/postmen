@@ -27,6 +27,8 @@ class ApiRequest extends Model
         'body',
         'body_file_media_id',
         'scripts',
+        'pre_request_script',
+        'test_script',
         'settings',
         'description',
         'sort_order',
@@ -40,6 +42,64 @@ class ApiRequest extends Model
         'scripts' => 'array',
         'settings' => 'array',
     ];
+
+    /**
+     * The flat script fields are views onto the stored `scripts` JSON
+     * ({ pre_request, tests }) — there are no separate columns for them.
+     * The UI already stores scripts this way (see migration
+     * 2026_11_25_130001), so adding `pre_request_script` / `test_script`
+     * columns would duplicate the same data.
+     */
+    protected $appends = [
+        'pre_request_script',
+        'test_script',
+    ];
+
+    public function getPreRequestScriptAttribute(): ?string
+    {
+        $scripts = $this->scripts ?? [];
+
+        return is_array($scripts) ? ($scripts['pre_request'] ?? null) : null;
+    }
+
+    public function setPreRequestScriptAttribute(?string $value): void
+    {
+        $scripts = $this->scripts ?? [];
+        if (! is_array($scripts)) {
+            $scripts = [];
+        }
+
+        if ($value === null || trim($value) === '') {
+            unset($scripts['pre_request']);
+        } else {
+            $scripts['pre_request'] = $value;
+        }
+
+        $this->attributes['scripts'] = json_encode($scripts);
+    }
+
+    public function getTestScriptAttribute(): ?string
+    {
+        $scripts = $this->scripts ?? [];
+
+        return is_array($scripts) ? ($scripts['tests'] ?? null) : null;
+    }
+
+    public function setTestScriptAttribute(?string $value): void
+    {
+        $scripts = $this->scripts ?? [];
+        if (! is_array($scripts)) {
+            $scripts = [];
+        }
+
+        if ($value === null || trim($value) === '') {
+            unset($scripts['tests']);
+        } else {
+            $scripts['tests'] = $value;
+        }
+
+        $this->attributes['scripts'] = json_encode($scripts);
+    }
 
     public function collection(): BelongsTo
     {

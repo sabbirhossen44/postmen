@@ -1,13 +1,20 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\CodeController;
 use App\Http\Controllers\Api\CollectionController;
+use App\Http\Controllers\Api\CookieController;
 use App\Http\Controllers\Api\EnvironmentController;
 use App\Http\Controllers\Api\FolderController;
+use App\Http\Controllers\Api\GlobalVariableController;
 use App\Http\Controllers\Api\HistoryController;
+use App\Http\Controllers\Api\ImportController;
 use App\Http\Controllers\Api\MediaController;
+use App\Http\Controllers\Api\OAuthController;
 use App\Http\Controllers\Api\RequestController;
+use App\Http\Controllers\Api\RunController;
 use App\Http\Controllers\Api\SendController;
+use App\Http\Controllers\Api\VariableController;
 use App\Http\Controllers\Api\WorkspaceController;
 use Illuminate\Support\Facades\Route;
 
@@ -37,6 +44,30 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::apiResource('environments', EnvironmentController::class);
     Route::post('/environments/{environment}/activate', [EnvironmentController::class, 'activate']);
+    Route::get('/environments/{environment}/resolve', [VariableController::class, 'resolve']);
+    Route::get('/environments/{environment}/export', [EnvironmentController::class, 'export']);
+    Route::post('/environments/import', [EnvironmentController::class, 'import']);
+
+    Route::apiResource('globals', GlobalVariableController::class)
+        ->parameters(['globals' => 'globalVariable']);
+    Route::get('/variables/preview', [VariableController::class, 'preview']);
+
+    Route::post('/requests/{apiRequest}/oauth/token', [OAuthController::class, 'exchange']);
+    Route::get('/requests/{apiRequest}/code', [CodeController::class, 'show']);
+    Route::post('/code/generate', [CodeController::class, 'generate']);
+
+    Route::post('/collections/{collection}/run', [RunController::class, 'store']);
+    Route::get('/runs', [RunController::class, 'index']);
+    Route::get('/runs/{run}', [RunController::class, 'show']);
+
+    Route::post('/collections/import/curl', [ImportController::class, 'importCurl']);
+    Route::post('/collections/import/openapi', [ImportController::class, 'importOpenApi']);
+    Route::post('/import/curl', [ImportController::class, 'importCurl']);
+    Route::post('/import/openapi', [ImportController::class, 'importOpenApi']);
+
+    Route::get('/cookies', [CookieController::class, 'index']);
+    Route::delete('/cookies', [CookieController::class, 'destroyAll']);
+    Route::delete('/cookies/{cookie}', [CookieController::class, 'destroy']);
 
     Route::get('/histories', [HistoryController::class, 'index']);
     Route::get('/histories/{history}', [HistoryController::class, 'show']);

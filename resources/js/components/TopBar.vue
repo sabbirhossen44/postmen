@@ -22,9 +22,9 @@
 
         <button
             type="button"
-            @click="showRunnerInfo = true"
+            @click="$emit('open-runner')"
             class="rounded border pm-border px-3 py-1.5 text-sm pm-text-2 hover:pm-active"
-            title="Collection Runner — coming in Phase 6"
+            title="Collection Runner — run a whole collection in order"
         >
             ▶ Runner
         </button>
@@ -158,40 +158,71 @@
 
         <Modal
             :open="showImportModal"
-            title="Import Collection"
-            confirm-label="Import JSON"
-            :confirm-disabled="!importJson.trim()"
+            title="Import"
+            :confirm-label="importConfirmLabel"
+            :confirm-disabled="importConfirmDisabled"
             @close="showImportModal = false"
-            @confirm="importJsonText"
+            @confirm="doImport"
         >
-            <p class="mb-2 text-sm pm-muted">Paste a Postman Collection v2.1 JSON document, or use the file picker.</p>
-            <textarea
-                v-model="importJson"
-                rows="8"
-                spellcheck="false"
-                placeholder='{"info": {"name": "My API", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"}, "item": []}'
-                class="w-full rounded border pm-input px-3 py-2 font-mono text-sm outline-none focus:border-[#FF6C37]"
-            ></textarea>
-            <button type="button" @click="triggerImport" class="mt-2 rounded border pm-border px-3 py-1.5 text-sm pm-text-2 hover:pm-active">
-                …or choose a .json file
-            </button>
+            <div class="mb-3 flex gap-1 border-b pm-border">
+                <button
+                    v-for="t in importTypes"
+                    :key="t.key"
+                    type="button"
+                    @click="importType = t.key; modalError = ''"
+                    :class="importType === t.key ? 'border-[#FF6C37] pm-text' : 'border-transparent pm-muted hover:pm-text'"
+                    class="border-b-2 px-3 py-2 text-xs font-medium"
+                >
+                    {{ t.label }}
+                </button>
+            </div>
+
+            <div v-if="importType === 'collection'">
+                <p class="mb-2 text-sm pm-muted">Paste a Postman Collection v2.1 JSON document, or use the file picker.</p>
+                <textarea
+                    v-model="importJson"
+                    rows="8"
+                    spellcheck="false"
+                    placeholder='{"info": {"name": "My API", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"}, "item": []}'
+                    class="w-full rounded border pm-input px-3 py-2 font-mono text-sm outline-none focus:border-[#FF6C37]"
+                ></textarea>
+                <button type="button" @click="triggerImport" class="mt-2 rounded border pm-border px-3 py-1.5 text-sm pm-text-2 hover:pm-active">
+                    …or choose a .json file
+                </button>
+            </div>
+
+            <div v-if="importType === 'curl'">
+                <p class="mb-2 text-sm pm-muted">Paste a cURL command — it becomes a request in a new collection.</p>
+                <textarea
+                    v-model="importCurlText"
+                    rows="8"
+                    spellcheck="false"
+                    placeholder="curl --request GET --url https://api.example.com/users --header 'Authorization: Bearer abc'"
+                    class="w-full rounded border pm-input px-3 py-2 font-mono text-sm outline-none focus:border-[#FF6C37]"
+                ></textarea>
+                <p v-if="importType === 'curl'" class="mt-2 text-xs pm-faint">Uses POST /api/import/curl when the backend has it.</p>
+            </div>
+
+            <div v-if="importType === 'openapi'">
+                <p class="mb-2 text-sm pm-muted">Paste an OpenAPI (Swagger) document as JSON, or choose a .json / .yaml file.</p>
+                <textarea
+                    v-model="openapiJson"
+                    rows="8"
+                    spellcheck="false"
+                    placeholder='{"openapi": "3.0.0", "info": {"title": "My API", "version": "1.0.0"}, "paths": {}}'
+                    class="w-full rounded border pm-input px-3 py-2 font-mono text-sm outline-none focus:border-[#FF6C37]"
+                ></textarea>
+                <button type="button" @click="$refs.openapiInput.click()" class="mt-2 rounded border pm-border px-3 py-1.5 text-sm pm-text-2 hover:pm-active">
+                    …or choose a .json / .yaml file
+                </button>
+                <span v-if="openapiFileName" class="ml-2 text-xs pm-muted">{{ openapiFileName }}</span>
+                <p class="mt-2 text-xs pm-faint">Uses POST /api/import/openapi when the backend has it.</p>
+            </div>
+
             <p v-if="modalError" class="mt-3 text-sm text-red-400">{{ modalError }}</p>
         </Modal>
+        <input ref="openapiInput" type="file" accept=".json,.yaml,.yml,application/json" class="hidden" @change="onOpenapiFile">
 
-        <Modal
-            :open="showRunnerInfo"
-            title="Collection Runner"
-            confirm-label="OK"
-            @close="showRunnerInfo = false"
-            @confirm="showRunnerInfo = false"
-        >
-            <p class="text-sm pm-text-2">
-                The Collection Runner (run a whole collection in order, with
-                iterations and data files) is Phase 6 of the parity plan and
-                is not built yet. It needs a <span class="font-mono text-xs">POST /collections/{id}/run</span>
-                endpoint first.
-            </p>
-        </Modal>
     </header>
 </template>
 
@@ -203,20 +234,41 @@ import Modal from './Modals.vue'
 export default {
     name: 'TopBar',
     components: { Modal },
-    emits: ['logged-out', 'imported', 'manage-environments', 'toggle-console'],
+    emits: ['logged-out', 'imported', 'manage-environments', 'toggle-console', 'open-runner'],
     data() {
         return {
             store,
             showWorkspaceModal: false,
             showImportModal: false,
-            showRunnerInfo: false,
             showNewMenu: false,
             showSettings: false,
             workspaceName: '',
             workspaceDescription: '',
             importJson: '',
+            importCurlText: '',
+            openapiJson: '',
+            openapiFile: null,
+            openapiFileName: '',
+            importType: 'collection',
+            importTypes: [
+                { key: 'collection', label: 'Collection JSON' },
+                { key: 'curl', label: 'cURL' },
+                { key: 'openapi', label: 'OpenAPI' },
+            ],
             modalError: '',
         }
+    },
+    computed: {
+        importConfirmLabel() {
+            if (this.importType === 'curl') return 'Import cURL'
+            if (this.importType === 'openapi') return 'Import OpenAPI'
+            return 'Import JSON'
+        },
+        importConfirmDisabled() {
+            if (this.importType === 'collection') return !this.importJson.trim()
+            if (this.importType === 'curl') return !this.importCurlText.trim()
+            return !this.openapiJson.trim() && !this.openapiFile
+        },
     },
     methods: {
         toggleTheme() {
@@ -297,6 +349,69 @@ export default {
                 this.$emit('imported')
             } catch (e) {
                 this.modalError = errMessage(e)
+            }
+        },
+        // Dispatch the import modal confirm by type.
+        async doImport() {
+            if (this.importType === 'curl') return this.importCurlText()
+            if (this.importType === 'openapi') return this.importOpenapiText()
+            return this.importJsonText()
+        },
+        async importCurlText() {
+            this.modalError = ''
+            try {
+                await api.importCurl({
+                    workspace_id: store.activeWorkspaceId,
+                    command: this.importCurlText.trim(),
+                })
+                await loadCollections()
+                this.showImportModal = false
+                this.importCurlText = ''
+                this.$emit('imported')
+            } catch (e) {
+                if (api.isMissingEndpoint(e)) {
+                    this.modalError = 'cURL import is not available yet — the POST /api/import/curl endpoint is still being built.'
+                } else {
+                    this.modalError = errMessage(e)
+                }
+            }
+        },
+        onOpenapiFile(event) {
+            const file = event.target.files && event.target.files[0]
+            event.target.value = ''
+            if (!file) return
+            this.openapiFile = file
+            this.openapiFileName = file.name
+            // A YAML file cannot be pasted as JSON — the file wins.
+            if (!/\.json$/i.test(file.name)) this.openapiJson = ''
+        },
+        async importOpenapiText() {
+            this.modalError = ''
+            try {
+                if (this.openapiFile) {
+                    await api.importOpenapi(this.openapiFile)
+                } else {
+                    let parsed
+                    try {
+                        parsed = JSON.parse(this.openapiJson)
+                    } catch (e) {
+                        this.modalError = 'That is not valid JSON: ' + e.message
+                        return
+                    }
+                    await api.importOpenapi(parsed)
+                }
+                await loadCollections()
+                this.showImportModal = false
+                this.openapiJson = ''
+                this.openapiFile = null
+                this.openapiFileName = ''
+                this.$emit('imported')
+            } catch (e) {
+                if (api.isMissingEndpoint(e)) {
+                    this.modalError = 'OpenAPI import is not available yet — the POST /api/import/openapi endpoint is still being built.'
+                } else {
+                    this.modalError = errMessage(e)
+                }
             }
         },
         async logout() {

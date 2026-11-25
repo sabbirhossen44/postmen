@@ -209,4 +209,75 @@ export const api = {
     sendRequest(payload) {
         return http.post('/send', payload).then(dataOf)
     },
+
+    // ---- Backend parity (Phase 4-6): these endpoints land with the
+    // backend workers. Callers must handle 404/501 gracefully — the
+    // endpoint simply is not available yet. ----
+    isMissingEndpoint(err) {
+        return !!err.response && (err.response.status === 404 || err.response.status === 501)
+    },
+
+    // Globals (workspace-wide variables, same shape as environment vars)
+    listGlobals() {
+        return http.get('/globals').then(listOf)
+    },
+    saveGlobals(payload) {
+        return http.post('/globals', payload).then(dataOf)
+    },
+    updateGlobal(id, payload) {
+        return http.put('/globals/' + id, payload).then(dataOf)
+    },
+    deleteGlobal(id) {
+        return http.delete('/globals/' + id).then((res) => res.data)
+    },
+
+    // Resolve an environment's variables (map + scope) for preview
+    resolveEnvironment(id) {
+        return http.get('/environments/' + id + '/resolve').then(dataOf)
+    },
+    exportEnvironment(id) {
+        return http.get('/environments/' + id + '/export', { responseType: 'blob' })
+    },
+
+    // OAuth 2.0 token exchange for a request
+    fetchOAuthToken(requestId, payload) {
+        return http.post('/requests/' + requestId + '/oauth/token', payload).then(dataOf)
+    },
+
+    // Collection Runner
+    runCollection(collectionId, payload) {
+        return http.post('/collections/' + collectionId + '/run', payload).then(dataOf)
+    },
+    getRun(id) {
+        return http.get('/runs/' + id).then(dataOf)
+    },
+
+    // Import: cURL command or an OpenAPI document
+    importCurl(payload) {
+        return http.post('/import/curl', payload).then(dataOf)
+    },
+    importOpenapi(fileOrJson) {
+        if (fileOrJson instanceof File) {
+            const form = new FormData()
+            form.append('file', fileOrJson)
+            return http.post('/import/openapi', form).then(dataOf)
+        }
+        return http.post('/import/openapi', { openapi: fileOrJson }).then(dataOf)
+    },
+
+    // Code generation for a request
+    generateCode(payload) {
+        return http.post('/code/generate', payload).then(dataOf)
+    },
+    getRequestCode(requestId, language) {
+        return http.get('/requests/' + requestId + '/code', { params: { language } }).then(dataOf)
+    },
+
+    // Stored cookies (the send proxy's cookie jar)
+    listCookies() {
+        return http.get('/cookies').then(listOf)
+    },
+    clearCookies() {
+        return http.delete('/cookies').then((res) => res.data)
+    },
 }

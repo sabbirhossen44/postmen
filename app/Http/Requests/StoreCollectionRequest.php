@@ -21,6 +21,10 @@ class StoreCollectionRequest extends FormRequest
             'variables' => ['nullable', 'array'],
             'variables.*.key' => ['required_with:variables', 'string'],
             'variables.*.value' => ['nullable'],
+            'variables.*.initial_value' => ['nullable'],
+            'variables.*.current_value' => ['nullable'],
+            'variables.*.type' => ['nullable', 'string', 'in:text,secret'],
+            'variables.*.enabled' => ['nullable', 'boolean'],
             'auth' => ['nullable', 'array'],
         ];
     }

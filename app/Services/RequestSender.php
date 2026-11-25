@@ -3,9 +3,11 @@
 namespace App\Services;
 
 use App\Models\ApiRequest;
+use App\Models\Collection;
 use App\Models\History;
 use App\Models\Media;
 use App\Models\User;
+use App\Repositories\CollectionRepository;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\Exception\RequestException;
@@ -16,20 +18,39 @@ use Illuminate\Support\Str;
  * Sends a raw HTTP request with Guzzle, applies auth, resolves
  * {{variables}}, measures timing, and records a History row.
  *
- * SSRF policy (deliberate, kept as-is — see audit §2.9): requests to
- * localhost and to private / loopback / link-local addresses are refused.
- * That blocks the common local-dev case (http://localhost:3000), but
- * opening it up is a security decision for Sabbir, not something to
- * change silently in a UI-parity task. If local dev APIs ever need to
- * work through /send, add an explicit opt-in (e.g. a local-mode
- * allowlist in config) instead of weakening this guard.
+ * SSRF policy (config/postmen.php, ALLOW_PRIVATE_IPS, default true):
+ * Postman lets you call local APIs, so by default this does too —
+ * localhost, *.test / *.local hosts and private IPs are allowed, which
+ * is what a local dev install needs (e.g. http://allsolution.test).
+ * The cloud metadata endpoint (169.254.169.254, whole 169.254.0.0/16
+ * range) is ALWAYS blocked. On a public deployment set
+ * ALLOW_PRIVATE_IPS=false and the guard refuses private, loopback and
+ * link-local addresses again.
  */
 class RequestSender
 {
     public const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
     /**
-     * @param  array{method?: string, url: string, params?: array, headers?: array, auth_type?: string, auth?: array|null, body_type?: string, body?: mixed, body_file_media_id?: int|null, settings?: array, variables?: array}  $payload
+     * Per-request settings with defaults. Keys: follow_redirects (bool),
+     * timeout (seconds), verify_ssl (bool), max_redirects (int),
+     * send_cookies (bool).
+     */
+    public static function normalizeSettings(?array $settings): array
+    {
+        $settings ??= [];
+
+        return [
+            'follow_redirects' => (bool) ($settings['follow_redirects'] ?? true),
+            'timeout' => (int) ($settings['timeout'] ?? 30),
+            'verify_ssl' => (bool) ($settings['verify_ssl'] ?? true),
+            'max_redirects' => (int) ($settings['max_redirects'] ?? 5),
+            'send_cookies' => (bool) ($settings['send_cookies'] ?? true),
+        ];
+    }
+
+    /**
+     * @param  array{method?: string, url: string, params?: array, headers?: array, auth_type?: string, auth?: array|null, body_type?: string, body?: mixed, body_file_media_id?: int|null, settings?: array, variables?: array, collection_id?: int|null, workspace_id?: int|null}  $payload
      */
     public function send(array $payload, ?User $user = null, ?ApiRequest $savedRequest = null): array
     {
@@ -72,18 +93,32 @@ class RequestSender
             return $result;
         }
 
+        $settings = self::normalizeSettings($payload['settings'] ?? []);
+        $workspaceId = $this->resolveWorkspaceId($payload, $savedRequest, $user);
+
         try {
-            $options = $this->buildOptions($payload, $variables, $user);
-            $settings = $payload['settings'] ?? [];
+            $options = $this->buildOptions($payload, $variables, $user, $url, $savedRequest);
+
+            // Cookie jar: send stored cookies, and persist Set-Cookie
+            // afterwards — only when the request opts into cookies.
+            if ($settings['send_cookies'] && $user !== null && $workspaceId !== null) {
+                $options['cookies'] = CookieService::jarFor($user->id, $workspaceId);
+            }
+
             $client = new Client([
-                'timeout' => (int) ($settings['timeout'] ?? 30),
+                'timeout' => $settings['timeout'],
+                'verify' => $settings['verify_ssl'],
                 'http_errors' => false,
-                'allow_redirects' => ($settings['follow_redirects'] ?? true)
-                    ? ['max' => (int) ($settings['max_redirects'] ?? 5), 'strict' => true]
+                'allow_redirects' => $settings['follow_redirects']
+                    ? ['max' => $settings['max_redirects'], 'strict' => true]
                     : false,
             ]);
 
             $response = $client->request($method, $url, $options);
+
+            if (isset($options['cookies']) && $user !== null && $workspaceId !== null) {
+                CookieService::storeFromResponse($user->id, $workspaceId, $response);
+            }
 
             $body = (string) $response->getBody();
             $headers = [];
@@ -109,6 +144,9 @@ class RequestSender
             $result['time_ms'] = (int) ((microtime(true) - $startedAt) * 1000);
 
             if ($e->hasResponse()) {
+                if ($settings['send_cookies'] && $user !== null && $workspaceId !== null) {
+                    CookieService::storeFromResponse($user->id, $workspaceId, $e->getResponse());
+                }
                 $result['status'] = $e->getResponse()->getStatusCode();
                 $result['body'] = Str::limit((string) $e->getResponse()->getBody(), self::MAX_BODY_BYTES, '');
             }
@@ -137,6 +175,14 @@ class RequestSender
             $shown['Authorization'] = 'Bearer •••';
         } elseif ($authType === 'basic') {
             $shown['Authorization'] = 'Basic •••';
+        } elseif ($authType === 'digest') {
+            $shown['Authorization'] = 'Digest •••';
+        } elseif ($authType === 'oauth2') {
+            $shown['Authorization'] = 'Bearer •••';
+        } elseif ($authType === 'aws') {
+            $shown['Authorization'] = 'AWS4-HMAC-SHA256 •••';
+        } elseif ($authType === 'inherit') {
+            $shown['Authorization'] = 'Inherited •••';
         } elseif ($authType === 'api_key') {
             $auth = $payload['auth'] ?? [];
             $in = $auth['in'] ?? $auth['add_to'] ?? 'header';
@@ -154,7 +200,7 @@ class RequestSender
     }
 
     /** Build Guzzle options: query, headers, auth, body. */
-    protected function buildOptions(array $payload, array $variables, ?User $user = null): array
+    protected function buildOptions(array $payload, array $variables, ?User $user = null, string $url = '', ?ApiRequest $savedRequest = null): array
     {
         $params = VariableResolver::resolveArray($payload['params'] ?? [], $variables);
         $headers = VariableResolver::resolveArray($payload['headers'] ?? [], $variables);
@@ -176,12 +222,12 @@ class RequestSender
             }
         }
 
-        $this->applyAuth($payload['auth_type'] ?? 'none', $auth, $requestHeaders, $query);
-
         $options = [
             'query' => $query,
             'headers' => $requestHeaders,
         ];
+
+        $this->applyAuth($payload['auth_type'] ?? 'none', $auth, $options['headers'], $options['query'], $options, $user, $savedRequest, $payload);
 
         $bodyType = $payload['body_type'] ?? 'none';
         $body = $payload['body'] ?? null;
@@ -274,17 +320,130 @@ class RequestSender
             }
         }
 
+        // AWS SigV4 signs the final request (method, full URL with
+        // query, headers, body), so it runs after everything else.
+        if (($payload['auth_type'] ?? 'none') === 'aws') {
+            $options['headers'] = AwsSigner::sign(
+                strtoupper($payload['method'] ?? 'GET'),
+                $this->urlWithQuery($url, $options['query'] ?? []),
+                $options['headers'],
+                $this->signingBody($options),
+                (string) ($auth['access_key'] ?? ''),
+                (string) ($auth['secret_key'] ?? ''),
+                (string) ($auth['region'] ?? 'us-east-1'),
+                (string) ($auth['service'] ?? 'execute-api'),
+            );
+        }
+
         return $options;
     }
 
-    protected function applyAuth(string $type, array $auth, array &$headers, array &$query): void
+    /** Full URL with the query params Guzzle would append. */
+    protected function urlWithQuery(string $url, array $query): string
     {
+        if ($query === []) {
+            return $url;
+        }
+
+        $separator = str_contains($url, '?') ? '&' : '?';
+
+        return $url.$separator.http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+    }
+
+    /** Body string for SigV4; UNSIGNED-PAYLOAD for streamed bodies. */
+    protected function signingBody(array $options): string
+    {
+        if (isset($options['body']) && is_string($options['body'])) {
+            return $options['body'];
+        }
+        if (isset($options['json'])) {
+            return json_encode($options['json']) ?: '';
+        }
+        if (isset($options['form_params'])) {
+            return http_build_query($options['form_params'], '', '&', PHP_QUERY_RFC3986);
+        }
+
+        return 'UNSIGNED-PAYLOAD';
+    }
+
+    /** Workspace for the cookie jar: payload, saved request, or collection. */
+    protected function resolveWorkspaceId(array $payload, ?ApiRequest $savedRequest, ?User $user): ?int
+    {
+        if (! empty($payload['workspace_id'])) {
+            return (int) $payload['workspace_id'];
+        }
+
+        $collectionId = $payload['collection_id'] ?? $savedRequest?->collection_id;
+        if ($collectionId !== null && $user !== null) {
+            $collection = CollectionRepository::findForUser((int) $collectionId, $user->id);
+
+            return $collection?->workspace_id;
+        }
+
+        return $savedRequest?->collection?->workspace_id;
+    }
+
+    protected function applyAuth(string $type, array $auth, array &$headers, array &$query, array &$options, ?User $user = null, ?ApiRequest $savedRequest = null, array $payload = []): void
+    {
+        // 'inherit' resolves auth from the parent collection (a folder
+        // has no auth of its own, so collections are the only parent).
+        if ($type === 'inherit') {
+            [$type, $auth] = $this->inheritedAuth($user, $savedRequest, $payload);
+            if ($type === 'inherit' || $type === 'none') {
+                return;
+            }
+        }
+
         match ($type) {
             'bearer' => $headers['Authorization'] = 'Bearer '.($auth['token'] ?? ''),
             'basic' => $headers['Authorization'] = 'Basic '.base64_encode(($auth['username'] ?? '').':'.($auth['password'] ?? '')),
             'api_key' => $this->applyApiKey($auth, $headers, $query),
+            // Guzzle handles the Digest challenge/response itself.
+            'digest' => $options['auth'] = [$auth['username'] ?? '', $auth['password'] ?? '', 'digest'],
+            // Token stored on the request by OAuthController::exchange.
+            'oauth2' => $this->applyOAuth2($auth, $headers),
+            // AWS signs after the body is built; see buildOptions().
+            'aws' => null,
             default => null,
         };
+    }
+
+    protected function applyOAuth2(array $auth, array &$headers): void
+    {
+        $token = $auth['access_token'] ?? '';
+        if ($token !== '') {
+            $headers['Authorization'] = ($auth['token_type'] ?? 'Bearer').' '.$token;
+        }
+    }
+
+    /**
+     * Collection auth for 'inherit'. The collection stores its auth as
+     * {type, ...fields} (e.g. {type: 'bearer', token: '...'}), or flat
+     * fields ({token: ...} implies bearer). Returns ['none', []] when
+     * there is no usable parent auth.
+     *
+     * @return array{0: string, 1: array}
+     */
+    protected function inheritedAuth(?User $user, ?ApiRequest $savedRequest, array $payload): array
+    {
+        $collectionId = $payload['collection_id'] ?? $savedRequest?->collection_id;
+        if ($collectionId === null || $user === null) {
+            return ['none', []];
+        }
+
+        $collection = CollectionRepository::findForUser((int) $collectionId, $user->id);
+        $auth = $collection?->auth ?? [];
+        if (! is_array($auth) || $auth === []) {
+            return ['none', []];
+        }
+
+        $type = $auth['type'] ?? $auth['auth_type']
+            ?? (isset($auth['token']) || isset($auth['access_token']) ? 'bearer'
+                : (isset($auth['username']) ? 'basic'
+                    : (isset($auth['key']) ? 'api_key' : 'none')));
+        unset($auth['type'], $auth['auth_type']);
+
+        return [(string) $type, $auth];
     }
 
     protected function applyApiKey(array $auth, array &$headers, array &$query): void
@@ -315,8 +474,21 @@ class RequestSender
     }
 
     /**
-     * Returns an error message when the URL targets a private,
-     * loopback or link-local address, or cannot be resolved — else null.
+     * Returns an error message when the URL must not be fetched — else null.
+     *
+     * Rules, in order:
+     * 1. Cloud metadata (169.254.169.254, whole 169.254.0.0/16 link-local
+     *    range) is ALWAYS blocked, even when private IPs are allowed.
+     * 2. Local dev hosts — literally `localhost`, or ending `.localhost`,
+     *    `.test` or `.local` — need no DNS check: when private IPs are
+     *    allowed they pass straight through (so http://allsolution.test
+     *    just works); when the toggle is off, `localhost` is refused
+     *    outright and `.test` / `.local` fall through to the DNS check
+     *    below, which refuses them when they resolve to loopback.
+     * 3. Everything else is checked against the `postmen.allow_private_ips`
+     *    toggle (ALLOW_PRIVATE_IPS, default true): when false, private,
+     *    loopback and link-local addresses are refused again, so a public
+     *    deployment cannot be used to probe its own network.
      */
     public function ssrfError(string $url): ?string
     {
@@ -328,18 +500,33 @@ class RequestSender
 
         $host = strtolower(trim($host, '[]'));
 
-        if ($host === 'localhost' || str_ends_with($host, '.localhost')) {
+        // 1. Cloud metadata is never reachable.
+        if ($this->isMetadataAddress($host)) {
+            return 'Requests to cloud metadata endpoints are not allowed.';
+        }
+
+        $allowPrivate = (bool) config('postmen.allow_private_ips', true);
+        $isLocalHost = $host === 'localhost' || str_ends_with($host, '.localhost')
+            || str_ends_with($host, '.test') || str_ends_with($host, '.local');
+
+        // 2. Local dev hosts: no DNS check when private IPs are allowed.
+        if ($isLocalHost && $allowPrivate) {
+            return null;
+        }
+
+        if (($host === 'localhost' || str_ends_with($host, '.localhost')) && ! $allowPrivate) {
             return 'Requests to localhost are not allowed.';
         }
 
-        // Direct IP literal.
+        // 3a. Direct IP literal.
         if (filter_var($host, FILTER_VALIDATE_IP)) {
-            return $this->isPrivateIp($host)
+            return ! $allowPrivate && $this->isPrivateIp($host)
                 ? 'Requests to private or reserved IP addresses are not allowed.'
                 : null;
         }
 
-        // Resolve the hostname and check every address it maps to.
+        // 3b. Resolve the hostname and check every address it maps to.
+        // (.test / .local hosts land here when the toggle is off.)
         $addresses = gethostbynamel($host);
 
         if ($addresses === false) {
@@ -347,12 +534,28 @@ class RequestSender
         }
 
         foreach ($addresses as $address) {
-            if ($this->isPrivateIp($address)) {
+            if ($this->isMetadataAddress($address)) {
+                return 'Requests to cloud metadata endpoints are not allowed.';
+            }
+            if (! $allowPrivate && $this->isPrivateIp($address)) {
                 return 'Requests to private or reserved IP addresses are not allowed.';
             }
         }
 
         return null;
+    }
+
+    /**
+     * 169.254.0.0/16 — link-local; 169.254.169.254 is the cloud
+     * instance-metadata service (AWS, GCP, Azure all answer there).
+     */
+    protected function isMetadataAddress(string $host): bool
+    {
+        if (! filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            return false;
+        }
+
+        return str_starts_with($host, '169.254.');
     }
 
     protected function isPrivateIp(string $ip): bool
@@ -368,7 +571,7 @@ class RequestSender
         $auth = $payload['auth'] ?? [];
         if (is_array($auth)) {
             // Secrets are never stored in the snapshot.
-            foreach (['token', 'password', 'value'] as $secret) {
+            foreach (['token', 'password', 'value', 'access_token', 'refresh_token', 'client_secret', 'secret_key', 'code'] as $secret) {
                 if (isset($auth[$secret])) {
                     $auth[$secret] = '';
                 }
@@ -399,6 +602,7 @@ class RequestSender
             'auth' => $auth,
             'body_type' => $payload['body_type'] ?? 'none',
             'body' => $body,
+            'settings' => self::normalizeSettings($payload['settings'] ?? null),
             'collection_id' => $payload['collection_id'] ?? null,
             'folder_id' => $payload['folder_id'] ?? null,
         ];

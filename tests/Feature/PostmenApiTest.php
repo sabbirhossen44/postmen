@@ -200,6 +200,10 @@ class PostmenApiTest extends TestCase
 
     public function test_send_blocks_private_and_loopback_urls(): void
     {
+        // The SSRF guard refuses private/loopback targets only when the
+        // toggle is off (ALLOW_PRIVATE_IPS=false, public deployment).
+        config(['postmen.allow_private_ips' => false]);
+
         $user = User::factory()->create();
         $sender = new RequestSender;
 

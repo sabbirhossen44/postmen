@@ -144,6 +144,27 @@
                     + New Environment
                 </button>
             </div>
+
+            <!-- Globals: workspace-wide variables, lowest precedence -->
+            <div class="border-b pm-border px-2 pb-3">
+                <div class="mb-1 flex items-center gap-2 px-1">
+                    <span class="text-xs font-medium pm-text-2">Globals</span>
+                    <span class="flex-1"></span>
+                    <button type="button" @click="openGlobalsEditor" class="rounded px-1.5 py-0.5 text-xs pm-text-2 hover:pm-active" title="Edit globals">✎ Edit</button>
+                </div>
+                <p v-if="store.globalsUnavailable" class="px-1 py-1 text-xs text-amber-400">
+                    Globals are not available yet — the GET /api/globals endpoint is still being built.
+                </p>
+                <p v-else-if="store.globals.length === 0" class="px-1 py-1 text-xs pm-faint">
+                    No globals yet. Globals apply to every request, below collection and environment variables.
+                </p>
+                <div v-for="g in store.globals" :key="g.id || g.key" class="flex items-center gap-2 rounded px-2 py-1 pm-hover">
+                    <span class="min-w-0 flex-1 truncate font-mono text-xs pm-text-2">{{ g.key }}</span>
+                    <span class="shrink-0 truncate font-mono text-xs pm-muted">{{ globalDisplayValue(g) }}</span>
+                    <span v-if="g.type === 'secret'" class="shrink-0 text-[10px] pm-faint">secret</span>
+                </div>
+            </div>
+
             <div class="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
                 <p v-if="store.environments.length === 0" class="px-2 py-4 text-sm pm-faint">
                     No environments yet. Add one to use {{variables}} in URLs.
@@ -272,12 +293,56 @@
             <KeyValueEditor :rows="envEditor.variables" key-placeholder="Variable" value-placeholder="Value" />
             <p v-if="envEditor.error" class="mt-3 text-sm text-red-400">{{ envEditor.error }}</p>
         </Modal>
+
+        <!-- Globals editor modal: Initial / Current value, secret type -->
+        <Modal
+            :open="globalsEditor.open"
+            title="Globals"
+            confirm-label="Save"
+            @close="globalsEditor.open = false"
+            @confirm="saveGlobals"
+        >
+            <p class="mb-3 text-xs pm-faint">Globals apply to every request in this workspace. Initial value is the shared default; Current value is what actually resolves (and is what a script can change at runtime).</p>
+            <div class="mb-1 flex gap-2 text-xs font-medium pm-muted">
+                <span class="w-1/4">Variable</span>
+                <span class="flex-1">Initial Value</span>
+                <span class="flex-1">Current Value</span>
+                <span class="w-20 shrink-0">Type</span>
+                <span class="w-8 shrink-0"></span>
+            </div>
+            <div v-for="(row, i) in globalsEditor.rows" :key="i" class="mb-1 flex items-center gap-2">
+                <input v-model="row.key" type="text" placeholder="Variable" class="w-1/4 rounded border pm-input px-2 py-1.5 text-sm outline-none focus:border-[#FF6C37]">
+                <input v-model="row.initial" type="text" placeholder="Initial" class="min-w-0 flex-1 rounded border pm-input px-2 py-1.5 text-sm outline-none focus:border-[#FF6C37]">
+                <input
+                    v-model="row.current"
+                    :type="row.type === 'secret' && !row.showSecret ? 'password' : 'text'"
+                    placeholder="Current"
+                    class="min-w-0 flex-1 rounded border pm-input px-2 py-1.5 text-sm outline-none focus:border-[#FF6C37]"
+                >
+                <select v-model="row.type" class="w-20 shrink-0 rounded border pm-input px-1 py-1.5 text-xs outline-none">
+                    <option value="text">Text</option>
+                    <option value="secret">Secret</option>
+                </select>
+                <span class="flex w-8 shrink-0 justify-end gap-0.5">
+                    <button
+                        v-if="row.type === 'secret'"
+                        type="button"
+                        @click="row.showSecret = !row.showSecret"
+                        class="rounded px-1 py-0.5 pm-muted hover:pm-text"
+                        :title="row.showSecret ? 'Hide value' : 'Show value'"
+                    >{{ row.showSecret ? '🙈' : '👁' }}</button>
+                    <button type="button" @click="globalsEditor.rows.splice(i, 1)" class="rounded px-1 py-0.5 pm-faint hover:text-red-400" title="Delete row">✕</button>
+                </span>
+            </div>
+            <button type="button" @click="globalsEditor.rows.push({ key: '', initial: '', current: '', type: 'text', showSecret: false, enabled: true })" class="mt-1 rounded px-2 py-1 text-sm pm-muted hover:pm-text-2">+ Add row</button>
+            <p v-if="globalsEditor.error" class="mt-3 text-sm text-red-400">{{ globalsEditor.error }}</p>
+        </Modal>
     </aside>
 </template>
 
 <script>
 import { api, errMessage } from '../api.js'
-import { store, loadCollections, loadCollectionDetail, loadEnvironments, loadHistories, loadMoreHistories } from '../store.js'
+import { store, loadCollections, loadCollectionDetail, loadEnvironments, loadGlobals, loadHistories, loadMoreHistories } from '../store.js'
 import Modal from './Modals.vue'
 import KeyValueEditor from './KeyValueEditor.vue'
 import { methodClass } from '../utils/methods.js'
@@ -303,6 +368,7 @@ export default {
             prompt: { open: false, mode: '', title: '', confirmLabel: 'Create', value: '', target: null, error: '' },
             confirmDelete: { open: false, kind: '', target: null, message: '' },
             envEditor: { open: false, id: null, name: '', variables: [], error: '' },
+            globalsEditor: { open: false, rows: [], error: '' },
             contextMenu: { open: false, kind: '', target: null, collection: null, x: 0, y: 0 },
             dragRequest: null,
         }
@@ -677,6 +743,52 @@ export default {
                 await loadEnvironments()
             } catch (e) {
                 this.envEditor.error = errMessage(e)
+            }
+        },
+
+        // ---- Globals ----
+        globalDisplayValue(g) {
+            const value = g.current_value !== undefined ? g.current_value : (g.value || '')
+            if (g.type === 'secret') return value ? '••••••••' : ''
+            return value
+        },
+        openGlobalsEditor() {
+            const rows = (store.globals || []).map((g) => ({
+                key: g.key || '',
+                initial: g.initial_value !== undefined ? g.initial_value : (g.value || ''),
+                current: g.current_value !== undefined ? g.current_value : (g.value || ''),
+                type: g.type || 'text',
+                showSecret: false,
+                enabled: g.enabled !== false,
+                id: g.id || null,
+            }))
+            if (rows.length === 0) {
+                rows.push({ key: '', initial: '', current: '', type: 'text', showSecret: false, enabled: true, id: null })
+            }
+            this.globalsEditor = { open: true, rows, error: '' }
+        },
+        async saveGlobals() {
+            const variables = this.globalsEditor.rows
+                .filter((r) => r.key.trim() !== '')
+                .map((r) => ({
+                    key: r.key.trim(),
+                    initial_value: r.initial,
+                    current_value: r.current,
+                    value: r.current,
+                    type: r.type,
+                    enabled: r.enabled !== false,
+                    ...(r.id ? { id: r.id } : {}),
+                }))
+            try {
+                await api.saveGlobals({ workspace_id: store.activeWorkspaceId, variables })
+                this.globalsEditor.open = false
+                await loadGlobals()
+            } catch (e) {
+                if (api.isMissingEndpoint(e)) {
+                    this.globalsEditor.error = 'Globals are not available yet — the /api/globals endpoint is still being built.'
+                } else {
+                    this.globalsEditor.error = errMessage(e)
+                }
             }
         },
 

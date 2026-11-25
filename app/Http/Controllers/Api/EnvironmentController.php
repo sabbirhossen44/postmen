@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ImportEnvironmentRequest;
 use App\Http\Requests\StoreEnvironmentRequest;
 use App\Http\Requests\UpdateEnvironmentRequest;
 use App\Models\Environment;
@@ -21,7 +22,8 @@ class EnvironmentController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Environments retrieved.',
-            'data' => EnvironmentRepository::forWorkspace($workspace->id),
+            'data' => EnvironmentRepository::forWorkspace($workspace->id)
+                ->map(fn (Environment $environment) => $environment->toDisplayArray()),
         ]);
     }
 
@@ -42,18 +44,22 @@ class EnvironmentController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Environment created.',
-            'data' => $environment,
+            'data' => $environment->toDisplayArray(),
         ], 201);
     }
 
-    public function show(Environment $environment): JsonResponse
+    /**
+     * Show one environment. Secret values stay hidden unless the owner
+     * explicitly asks (?include_secrets=1) for the edit fetch.
+     */
+    public function show(Request $environmentRequest, Environment $environment): JsonResponse
     {
         $this->ensureOwner($environment);
 
         return response()->json([
             'success' => true,
             'message' => 'Environment retrieved.',
-            'data' => $environment,
+            'data' => $environment->toDisplayArray($environmentRequest->boolean('include_secrets')),
         ]);
     }
 
@@ -69,7 +75,7 @@ class EnvironmentController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Environment updated.',
-            'data' => $environment->fresh(),
+            'data' => $environment->fresh()->toDisplayArray(),
         ]);
     }
 
@@ -95,8 +101,89 @@ class EnvironmentController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Environment activated.',
-            'data' => $environment->fresh(),
+            'data' => $environment->fresh()->toDisplayArray(),
         ]);
+    }
+
+    /** Import a Postman environment JSON file ({name, values:[{key,value}]}). */
+    public function import(ImportEnvironmentRequest $request): JsonResponse
+    {
+        $workspace = WorkspaceRepository::findForUser((int) $request->workspace_id, auth()->id());
+        abort_unless($workspace, 404, 'Workspace not found.');
+
+        $json = $request->filled('json')
+            ? $request->input('json')
+            : json_decode($request->file('file')->getContent(), true);
+
+        if (! is_array($json) || empty($json['name']) || ! is_string($json['name'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid Postman environment: missing name.',
+                'data' => null,
+            ], 422);
+        }
+
+        $environment = EnvironmentRepository::create([
+            'workspace_id' => $workspace->id,
+            'user_id' => auth()->id(),
+            'name' => $json['name'],
+            'is_active' => false,
+            'variables' => $this->toVariables($json['values'] ?? $json['variables'] ?? []),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Environment imported.',
+            'data' => $environment,
+        ], 201);
+    }
+
+    /** Export as Postman environment JSON v2.1. */
+    public function export(Environment $environment): JsonResponse
+    {
+        $this->ensureOwner($environment);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Environment exported.',
+            'data' => [
+                'id' => (string) $environment->id,
+                'name' => $environment->name,
+                'values' => array_map(fn ($variable) => [
+                    'key' => $variable['key'],
+                    'value' => (string) ($variable['value'] ?? ''),
+                    'type' => 'default',
+                    'enabled' => (bool) ($variable['enabled'] ?? true),
+                ], $environment->variables ?? []),
+                '_postman_variable_scope' => 'environment',
+                '_postman_exported_at' => now()->toISOString(),
+                '_postman_exported_using' => 'Postmen',
+            ],
+        ]);
+    }
+
+    /** Postman values [{key, value, enabled/disabled}] -> our variables. */
+    protected function toVariables(mixed $values): array
+    {
+        if (! is_array($values)) {
+            return [];
+        }
+
+        $variables = [];
+
+        foreach ($values as $value) {
+            if (! is_array($value) || ! isset($value['key'])) {
+                continue;
+            }
+
+            $variables[] = [
+                'key' => $value['key'],
+                'value' => (string) ($value['value'] ?? ''),
+                'enabled' => ! ($value['disabled'] ?? false) && ($value['enabled'] ?? true),
+            ];
+        }
+
+        return $variables;
     }
 
     protected function ensureOwner(Environment $environment): void

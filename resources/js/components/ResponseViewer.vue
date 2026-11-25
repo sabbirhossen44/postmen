@@ -87,7 +87,7 @@
             </div>
 
             <div v-show="activeTab === 'cookies'">
-                <table v-if="cookies.length > 0" class="w-full text-left text-sm">
+                <table v-if="cookies.length > 0" class="mb-4 w-full text-left text-sm">
                     <thead>
                         <tr class="border-b pm-border text-xs pm-faint">
                             <th class="py-2 pr-4 font-medium">Name</th>
@@ -103,7 +103,48 @@
                         </tr>
                     </tbody>
                 </table>
-                <p v-else class="text-sm pm-faint">No cookies in this response.</p>
+                <p v-else class="mb-4 text-sm pm-faint">No cookies in this response.</p>
+
+                <!-- Stored cookie jar (GET /api/cookies) -->
+                <div class="border-t pm-border pt-3">
+                    <div class="mb-2 flex items-center gap-2">
+                        <h4 class="text-xs font-medium pm-text-2">Stored Cookies</h4>
+                        <span class="flex-1"></span>
+                        <button
+                            type="button"
+                            @click="loadStoredCookies"
+                            class="rounded border pm-border px-2 py-1 text-xs pm-text-2 hover:pm-active"
+                        >
+                            Refresh
+                        </button>
+                        <button
+                            type="button"
+                            @click="clearStoredCookies"
+                            :disabled="storedCookies.length === 0"
+                            class="rounded border pm-border px-2 py-1 text-xs pm-text-2 hover:pm-active disabled:opacity-50"
+                        >
+                            Clear All
+                        </button>
+                    </div>
+                    <p v-if="cookiesNote" class="mb-2 text-xs text-amber-400">{{ cookiesNote }}</p>
+                    <table v-if="storedCookies.length > 0" class="w-full text-left text-sm">
+                        <thead>
+                            <tr class="border-b pm-border text-xs pm-faint">
+                                <th class="py-2 pr-4 font-medium">Name</th>
+                                <th class="py-2 pr-4 font-medium">Value</th>
+                                <th class="py-2 font-medium">Domain</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(c, i) in storedCookies" :key="i" class="border-b pm-border align-top">
+                                <td class="py-2 pr-4 font-mono pm-text-2">{{ c.name }}</td>
+                                <td class="break-all py-2 pr-4 font-mono pm-muted">{{ c.value }}</td>
+                                <td class="py-2 font-mono text-xs pm-muted">{{ c.domain || c.host || '—' }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p v-else-if="!cookiesNote" class="text-sm pm-faint">No stored cookies.</p>
+                </div>
             </div>
 
             <div v-show="activeTab === 'headers'">
@@ -126,14 +167,23 @@
 
             <div v-show="activeTab === 'tests'">
                 <div v-if="testResults.length > 0">
+                    <div class="mb-2 text-sm pm-muted">
+                        {{ passedTests }} / {{ testResults.length }} passed
+                    </div>
                     <div v-for="(t, i) in testResults" :key="i" class="py-1 text-sm" :class="t.passed ? 'status-ok' : 'status-error'">
                         {{ t.passed ? '✓' : '✗' }} {{ t.name }}
+                        <span v-if="!t.passed && t.error" class="block pl-5 font-mono text-xs pm-muted">{{ t.error }}</span>
                     </div>
                 </div>
                 <p v-else class="text-sm pm-faint">
-                    No test results. Post-response scripts are stored but not executed yet —
-                    the sandboxed script runner (Phase 5) will feed this tab.
+                    No test results. Add a test script in the Scripts tab and send the request — results appear here.
                 </p>
+                <div v-if="consoleLogs.length > 0" class="mt-4 border-t pm-border pt-3">
+                    <h4 class="mb-2 text-xs font-medium pm-text-2">Console</h4>
+                    <div class="max-h-48 overflow-y-auto rounded border pm-border pm-code-bg p-3 font-mono text-xs leading-relaxed pm-muted">
+                        <div v-for="(line, i) in consoleLogs" :key="i" class="whitespace-pre-wrap break-words py-0.5">{{ formatLog(line) }}</div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -142,6 +192,7 @@
 <script>
 import { prettyJson, formatBytes, formatTime } from '../utils/variables.js'
 import { statusClass } from '../utils/methods.js'
+import { api, errMessage } from '../api.js'
 import JsonTree from './JsonTree.vue'
 
 export default {
@@ -152,7 +203,12 @@ export default {
         sending: { type: Boolean, default: false },
     },
     data() {
-        return { activeTab: 'body', bodyMode: 'pretty', search: '' }
+        return { activeTab: 'body', bodyMode: 'pretty', search: '', storedCookies: [], cookiesNote: '', cookiesLoaded: false }
+    },
+    watch: {
+        activeTab(value) {
+            if (value === 'cookies' && !this.cookiesLoaded) this.loadStoredCookies()
+        },
     },
     computed: {
         responseTabs() {
@@ -193,6 +249,12 @@ export default {
         },
         testResults() {
             return (this.response && this.response.test_results) || []
+        },
+        passedTests() {
+            return this.testResults.filter((t) => t.passed).length
+        },
+        consoleLogs() {
+            return (this.response && this.response.console_logs) || []
         },
         headerRows() {
             if (!this.response || !this.response.headers) return []
@@ -248,6 +310,37 @@ export default {
             // Saved examples (per-request named responses) are Phase 8;
             // until then "Save Response" downloads the body to a file.
             this.downloadBody()
+        },
+        formatLog(line) {
+            if (typeof line === 'string') return line
+            try { return JSON.stringify(line) } catch (e) { return String(line) }
+        },
+        async loadStoredCookies() {
+            this.cookiesNote = ''
+            try {
+                const list = await api.listCookies()
+                this.storedCookies = Array.isArray(list) ? list : []
+                this.cookiesLoaded = true
+            } catch (e) {
+                this.storedCookies = []
+                if (api.isMissingEndpoint(e)) {
+                    this.cookiesNote = 'Stored cookies are not available yet — the GET /api/cookies endpoint is still being built.'
+                } else {
+                    this.cookiesNote = 'Could not load stored cookies: ' + errMessage(e)
+                }
+            }
+        },
+        async clearStoredCookies() {
+            try {
+                await api.clearCookies()
+                this.storedCookies = []
+            } catch (e) {
+                if (api.isMissingEndpoint(e)) {
+                    this.cookiesNote = 'Clearing stored cookies is not available yet — the cookie endpoint is still being built.'
+                } else {
+                    alert('Clear cookies failed: ' + errMessage(e))
+                }
+            }
         },
     },
 }
